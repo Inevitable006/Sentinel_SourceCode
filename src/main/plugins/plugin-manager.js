@@ -16,7 +16,7 @@ class PluginManager {
   async initialize() {
     logger.info('plugin', 'Initializing plugin manager...');
     const builtinDir = path.join(__dirname, 'core');
-    
+
     // Ensure core plugins directory exists
     if (!fs.existsSync(builtinDir)) {
       fs.mkdirSync(builtinDir, { recursive: true });
@@ -73,7 +73,7 @@ class PluginManager {
 
   async executeTool(toolName, args) {
     logger.info('plugin', `Executing tool: ${toolName}`);
-    
+
     for (const plugin of this.plugins.values()) {
       const tool = plugin.tools.find(t => t.schema.name === toolName);
       if (tool) {
@@ -86,7 +86,7 @@ class PluginManager {
         }
       }
     }
-    
+
     return { success: false, error: `Tool not found: ${toolName}` };
   }
 }

@@ -1,15 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SENTINEL — AI Assistant</title>
-  <meta name="description" content="SENTINEL: Smart Engine for Natural Talk & Intelligent Local Execution. Your personal AI assistant running entirely on your local machine.">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:8000 http://localhost:8000">
+  <meta name="description"
+    content="SENTINEL: Smart Engine for Natural Talk & Intelligent Local Execution. Your personal AI assistant running entirely on your local machine.">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:8000 http://localhost:8000">
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
 
   <!-- Stylesheets -->
   <link rel="stylesheet" href="styles/index.css">
@@ -18,6 +23,7 @@
   <link rel="stylesheet" href="styles/chat.css">
   <link rel="stylesheet" href="styles/dashboard.css">
 </head>
+
 <body>
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- Custom Title Bar                                            -->
@@ -26,7 +32,9 @@
     <div class="titlebar-drag">
       <button id="btn-menu" class="menu-btn" title="Toggle Menu">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="18" x2="21" y2="18" />
         </svg>
       </button>
       <div class="titlebar-logo">
@@ -40,13 +48,20 @@
     </div>
     <div class="titlebar-controls">
       <button id="btn-minimize" class="titlebar-btn" title="Minimize">
-        <svg width="12" height="12" viewBox="0 0 12 12"><line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.5"/></svg>
+        <svg width="12" height="12" viewBox="0 0 12 12">
+          <line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.5" />
+        </svg>
       </button>
       <button id="btn-maximize" class="titlebar-btn" title="Maximize">
-        <svg width="12" height="12" viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+        <svg width="12" height="12" viewBox="0 0 12 12">
+          <rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.5" fill="none" />
+        </svg>
       </button>
       <button id="btn-close" class="titlebar-btn titlebar-btn-close" title="Close">
-        <svg width="12" height="12" viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" stroke-width="1.5"/></svg>
+        <svg width="12" height="12" viewBox="0 0 12 12">
+          <line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="1.5" />
+          <line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" stroke-width="1.5" />
+        </svg>
       </button>
     </div>
   </header>
@@ -56,26 +71,28 @@
   <!-- ═══════════════════════════════════════════════════════════ -->
   <main id="app-container" class="app-container">
     <div id="sidebar-overlay" class="sidebar-overlay"></div>
-    
+
     <!-- ─── Sidebar Navigation ─── -->
     <nav id="sidebar" class="sidebar">
       <div class="nav-items">
         <button id="nav-chat" class="nav-btn active" data-view="chat" title="Chat">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
           <span>Chat</span>
         </button>
         <button id="nav-dashboard" class="nav-btn" data-view="dashboard" title="System">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-            <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
           </svg>
           <span>System</span>
         </button>
         <button id="nav-files" class="nav-btn" data-view="files" title="Files">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
           <span>Files</span>
         </button>
@@ -83,7 +100,9 @@
       <div class="nav-bottom">
         <button id="nav-settings" class="nav-btn" data-view="settings" title="Settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
           </svg>
           <span>Settings</span>
         </button>
@@ -109,7 +128,8 @@
               <h1 class="sentinel-name">SENTINEL</h1>
               <p class="sentinel-subtitle">Smart Engine for Natural Talk & Intelligent Local Execution</p>
               <div style="display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 4px;">
-                <span id="engine-indicator" style="font-size: 0.75rem; padding: 2px 6px; background: rgba(255,255,255,0.1); border-radius: 4px; color: var(--text-secondary);">UNLOADED</span>
+                <span id="engine-indicator"
+                  style="font-size: 0.75rem; padding: 2px 6px; background: rgba(255,255,255,0.1); border-radius: 4px; color: var(--text-secondary);">UNLOADED</span>
                 <p class="sentinel-status" id="sentinel-status-text" style="margin-top: 0;">Initializing...</p>
               </div>
             </div>
@@ -125,15 +145,18 @@
             <div class="chat-input-wrapper">
               <button id="btn-voice" class="voice-btn" title="Voice Input (Coming Soon)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
-                  <line x1="8" y1="23" x2="16" y2="23"/>
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
               </button>
-              <textarea id="chat-input" class="chat-input" placeholder="Talk to SENTINEL..." rows="1" autofocus></textarea>
+              <textarea id="chat-input" class="chat-input" placeholder="Talk to SENTINEL..." rows="1"
+                autofocus></textarea>
               <button id="btn-send" class="send-btn" title="Send Message">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
                 </svg>
               </button>
             </div>
@@ -153,13 +176,24 @@
             <!-- CPU Card -->
             <div class="stat-card" id="card-cpu">
               <div class="stat-card-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                  <rect x="9" y="9" width="6" height="6" />
+                  <line x1="9" y1="1" x2="9" y2="4" />
+                  <line x1="15" y1="1" x2="15" y2="4" />
+                  <line x1="9" y1="20" x2="9" y2="23" />
+                  <line x1="15" y1="20" x2="15" y2="23" />
+                  <line x1="20" y1="9" x2="23" y2="9" />
+                  <line x1="20" y1="14" x2="23" y2="14" />
+                  <line x1="1" y1="9" x2="4" y2="9" />
+                  <line x1="1" y1="14" x2="4" y2="14" />
+                </svg>
                 <span>CPU</span>
               </div>
               <div class="stat-ring-container">
                 <svg class="stat-ring" viewBox="0 0 120 120">
-                  <circle class="ring-bg" cx="60" cy="60" r="52"/>
-                  <circle class="ring-fill" id="cpu-ring" cx="60" cy="60" r="52"/>
+                  <circle class="ring-bg" cx="60" cy="60" r="52" />
+                  <circle class="ring-fill" id="cpu-ring" cx="60" cy="60" r="52" />
                 </svg>
                 <div class="stat-ring-value" id="cpu-value">0%</div>
               </div>
@@ -168,13 +202,19 @@
             <!-- Memory Card -->
             <div class="stat-card" id="card-memory">
               <div class="stat-card-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="6" x2="6" y2="18"/><line x1="10" y1="6" x2="10" y2="18"/><line x1="14" y1="6" x2="14" y2="18"/><line x1="18" y1="6" x2="18" y2="18"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="6" width="20" height="12" rx="2" />
+                  <line x1="6" y1="6" x2="6" y2="18" />
+                  <line x1="10" y1="6" x2="10" y2="18" />
+                  <line x1="14" y1="6" x2="14" y2="18" />
+                  <line x1="18" y1="6" x2="18" y2="18" />
+                </svg>
                 <span>Memory</span>
               </div>
               <div class="stat-ring-container">
                 <svg class="stat-ring" viewBox="0 0 120 120">
-                  <circle class="ring-bg" cx="60" cy="60" r="52"/>
-                  <circle class="ring-fill ring-fill-memory" id="mem-ring" cx="60" cy="60" r="52"/>
+                  <circle class="ring-bg" cx="60" cy="60" r="52" />
+                  <circle class="ring-fill ring-fill-memory" id="mem-ring" cx="60" cy="60" r="52" />
                 </svg>
                 <div class="stat-ring-value" id="mem-value">0%</div>
               </div>
@@ -183,13 +223,17 @@
             <!-- Disk Card -->
             <div class="stat-card" id="card-disk">
               <div class="stat-card-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <ellipse cx="12" cy="5" rx="9" ry="3" />
+                  <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                  <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                </svg>
                 <span>Disk</span>
               </div>
               <div class="stat-ring-container">
                 <svg class="stat-ring" viewBox="0 0 120 120">
-                  <circle class="ring-bg" cx="60" cy="60" r="52"/>
-                  <circle class="ring-fill ring-fill-disk" id="disk-ring" cx="60" cy="60" r="52"/>
+                  <circle class="ring-bg" cx="60" cy="60" r="52" />
+                  <circle class="ring-fill ring-fill-disk" id="disk-ring" cx="60" cy="60" r="52" />
                 </svg>
                 <div class="stat-ring-value" id="disk-value">0%</div>
               </div>
@@ -198,7 +242,12 @@
             <!-- Network Card -->
             <div class="stat-card" id="card-network">
               <div class="stat-card-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+                  <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+                  <circle cx="12" cy="20" r="1" />
+                </svg>
                 <span>Network</span>
               </div>
               <div class="network-stats">
@@ -218,7 +267,10 @@
           <div class="gpu-section" id="gpu-section">
             <div class="stat-card stat-card-wide">
               <div class="stat-card-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v3"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="7" width="20" height="14" rx="2" />
+                  <path d="M16 7V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v3" />
+                </svg>
                 <span>GPU</span>
               </div>
               <div class="gpu-info" id="gpu-info">Detecting GPU...</div>
@@ -236,7 +288,7 @@
           </div>
           <div class="coming-soon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
             <p>File Manager — Coming in Phase 3</p>
             <span>Ask SENTINEL to browse or find files for you in the chat.</span>
@@ -253,7 +305,9 @@
           </div>
           <div class="coming-soon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">
-              <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
             </svg>
             <p>Settings — Coming in Phase 4</p>
             <span>Customize voice, personality, hotkeys, and model selection.</span>
@@ -268,19 +322,20 @@
     <div class="modal-content glass-panel">
       <div class="modal-header">
         <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-red)" stroke-width="2" width="24" height="24">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
         <h3 id="modal-title">Action Confirmation Required</h3>
       </div>
       <div class="modal-body">
         <p id="modal-desc" class="modal-desc">SENTINEL has requested permission to execute a system action.</p>
-        
+
         <div class="modal-field">
           <span class="modal-label">Action:</span>
           <span id="modal-tool-title" class="modal-value highlight">...</span>
         </div>
-        
+
         <div class="modal-field">
           <span class="modal-label">Purpose:</span>
           <span id="modal-purpose" class="modal-value">...</span>
@@ -295,15 +350,18 @@
           <span class="modal-label">Risk Level:</span>
           <div>
             <span id="modal-risk-tier" class="modal-value risk-badge">...</span>
-            <span id="modal-risk-desc" class="modal-value" style="margin-left: 8px; font-size: 0.85rem; color: var(--text-secondary);">...</span>
+            <span id="modal-risk-desc" class="modal-value"
+              style="margin-left: 8px; font-size: 0.85rem; color: var(--text-secondary);">...</span>
           </div>
         </div>
 
         <details class="modal-technical-details">
           <summary>Technical Details (Advanced)</summary>
           <div class="modal-field" style="margin-top: 10px;">
-            <span class="modal-label">Effect:</span> <span id="modal-effect" class="modal-value" style="color: var(--text-secondary);">...</span>
-            <span class="modal-label">Reversible:</span> <span id="modal-reversible" class="modal-value" style="color: var(--text-secondary);">...</span>
+            <span class="modal-label">Effect:</span> <span id="modal-effect" class="modal-value"
+              style="color: var(--text-secondary);">...</span>
+            <span class="modal-label">Reversible:</span> <span id="modal-reversible" class="modal-value"
+              style="color: var(--text-secondary);">...</span>
             <span class="modal-label" style="margin-top: 8px;">Parameters:</span>
             <pre id="modal-args" class="modal-code">{}</pre>
           </div>
@@ -325,4 +383,5 @@
   <script src="js/dashboard.js"></script>
   <script src="js/app.js"></script>
 </body>
+
 </html>

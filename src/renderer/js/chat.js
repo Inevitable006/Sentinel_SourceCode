@@ -53,7 +53,7 @@ class ChatInterface {
     if (this.ws) {
       this.ws.close();
     }
-    
+
     // Get secure session token
     let token = '';
     try {
@@ -61,15 +61,15 @@ class ChatInterface {
     } catch (e) {
       console.error('Failed to get session token', e);
     }
-    
+
     this.ws = new WebSocket(`ws://localhost:8000/ws/chat?token=${token}`);
-    
+
     this.ws.onopen = () => {
       this.addSystemMessage('Connected to SENTINEL Secure Backend.');
       this._setInputEnabled(true);
       if (window.app?.orb) window.app.orb.setState('idle');
     };
-    
+
     this.ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
@@ -78,13 +78,13 @@ class ChatInterface {
         console.error('Failed to parse WebSocket message:', err);
       }
     };
-    
+
     this.ws.onclose = () => {
       this.addSystemMessage('Connection to backend lost. Reconnecting in 3 seconds...');
       this._setInputEnabled(false);
       setTimeout(() => this._connectWebSocket(), 3000);
     };
-    
+
     this.ws.onerror = (error) => {
       console.error('WebSocket Error:', error);
       if (window.app?.orb) window.app.orb.setState('error');
@@ -120,14 +120,14 @@ class ChatInterface {
       case 'status':
         this.addSystemMessage(msg.message);
         break;
-      
+
       case 'error':
         this.addAssistantMessage(`[ERROR] ${msg.message}`);
         this._removeTypingIndicator();
         this._setInputEnabled(true);
         if (window.app?.orb) window.app.orb.setState('idle');
         break;
-        
+
       case 'reply_start':
         this.isStreaming = true;
         this.currentStreamContent = '';
@@ -136,23 +136,23 @@ class ChatInterface {
         this._removeTypingIndicator();
         if (window.app?.orb) window.app.orb.setState('speaking');
         break;
-        
+
       case 'reply_chunk':
         if (this.currentStreamEl) {
           this.currentStreamContent += msg.token;
-          this.currentStreamEl.querySelector('.message-text').innerHTML = 
+          this.currentStreamEl.querySelector('.message-text').innerHTML =
             this._parseMarkdown(this.currentStreamContent);
           this._scrollToBottom();
         }
         break;
-        
+
       case 'reply_end':
         this.isStreaming = false;
         this.currentStreamEl = null;
         this._setInputEnabled(true);
         if (window.app?.orb) window.app.orb.setState('idle');
         break;
-        
+
       case 'tool_confirmation_required':
         this._showConfirmationModal(msg.data);
         break;
@@ -169,7 +169,7 @@ class ChatInterface {
 
     // Add user message to UI
     this.addUserMessage(text);
-    
+
     // Clear input
     this.chatInput.value = '';
     this.chatInput.style.height = 'auto';
@@ -187,22 +187,22 @@ class ChatInterface {
   _showConfirmationModal(data) {
     const modal = document.getElementById('tool-modal');
     if (!modal) return;
-    
+
     const token = data.token;
     const preview = data.action_preview;
-    
+
     // Safely assign textContent to prevent XSS
     document.getElementById('modal-tool-title').textContent = preview.title || preview.tool;
     document.getElementById('modal-purpose').textContent = preview.purpose || 'System operation';
     document.getElementById('modal-target').textContent = preview.target || 'System resources';
-    
+
     const riskBadge = document.getElementById('modal-risk-tier');
     riskBadge.textContent = preview.risk;
     document.getElementById('modal-risk-desc').textContent = preview.risk_explanation || '';
-    
+
     document.getElementById('modal-effect').textContent = preview.expected_effect || '';
     document.getElementById('modal-reversible').textContent = preview.is_reversible ? 'Yes' : 'No';
-    
+
     // Color coding for risk tier
     if (preview.risk === 'TIER_3' || preview.risk === 'TIER_4') {
       riskBadge.style.color = 'var(--accent-red)';
@@ -213,7 +213,7 @@ class ChatInterface {
     }
 
     document.getElementById('modal-args').textContent = JSON.stringify(preview.args, null, 2);
-    
+
     // Start Countdown
     let timeLeft = 120;
     const timerEl = document.getElementById('modal-countdown');
@@ -226,34 +226,34 @@ class ChatInterface {
         this._closeModal();
       }
     }, 1000);
-    
+
     // Attach event listeners for buttons
     const btnApprove = document.getElementById('btn-approve-tool');
     const btnReject = document.getElementById('btn-reject-tool');
-    
+
     // Clear existing listeners
     const newBtnApprove = btnApprove.cloneNode(true);
     const newBtnReject = btnReject.cloneNode(true);
     btnApprove.parentNode.replaceChild(newBtnApprove, btnApprove);
     btnReject.parentNode.replaceChild(newBtnReject, btnReject);
-    
+
     newBtnReject.addEventListener('click', () => {
       clearInterval(timerInterval);
       this.addSystemMessage(`Action rejected by user.`);
       this._closeModal();
       this._setInputEnabled(true);
     });
-    
+
     newBtnApprove.addEventListener('click', async () => {
       clearInterval(timerInterval);
       newBtnApprove.disabled = true;
       newBtnApprove.textContent = 'Approving...';
-      
+
       try {
         const sessionToken = await window.sentinel.auth.getSessionToken();
         const response = await fetch('http://localhost:8000/api/tools/confirm', {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             'X-Sentinel-Session': sessionToken
           },
@@ -264,21 +264,21 @@ class ChatInterface {
             session_id: "Websocket Session" // TODO: Use actual session ID or let backend infer
           })
         });
-        
+
         const result = await response.json();
         if (result.status === 'error') {
           this.addAssistantMessage(`[ERROR] ${result.message}`);
         } else {
           // Success! Backend will usually handle continuing the chat loop, or we trigger it.
           this.addSystemMessage(`Action ${preview.tool} executed successfully.`);
-          
+
           // Force a followup by sending a hidden message to the websocket
           this.ws.send(JSON.stringify({ text: "Tool executed successfully. Summarize the results." }));
         }
       } catch (err) {
         this.addAssistantMessage(`[ERROR] Failed to contact backend: ${err.message}`);
       }
-      
+
       newBtnApprove.disabled = false;
       newBtnApprove.textContent = 'Approve Action';
       this._closeModal();
@@ -333,7 +333,7 @@ class ChatInterface {
 
   _parseMarkdown(text) {
     if (!text) return '';
-    
+
     // Simple markdown parser (no external dependency needed for basic formatting)
     let html = text
       // Escape HTML
