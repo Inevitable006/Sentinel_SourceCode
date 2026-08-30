@@ -98,7 +98,6 @@ async function bootSentinel() {
 
   // STEP 6: Initialize memory subsystems (Disabled for Phase 1)
   console.log('[SENTINEL] Step 6/7: Memory subsystems deferred to Python backend');
-
   // STEP 7: Initialize plugin subsystem & evolution loop (Disabled for Phase 1)
   console.log('[SENTINEL] Step 7/8: Plugin subsystems deferred to Python backend');
 
@@ -151,11 +150,16 @@ async function bootSentinel() {
           }
         }
       });
-
     } catch (err) {
       logger.error('system', 'Failed to spawn Python backend', { error: err.message });
     }
   }
+
+  spawnBackend();
+
+  app.on('before-quit', () => {
+    if (aiProcess) aiProcess.kill();
+  });
 
   spawnBackend();
 

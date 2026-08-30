@@ -53,7 +53,6 @@ class ChatInterface {
     if (this.ws) {
       this.ws.close();
     }
-
     // Get secure session token
     let token = '';
     try {
@@ -69,7 +68,6 @@ class ChatInterface {
       this._setInputEnabled(true);
       if (window.app?.orb) window.app.orb.setState('idle');
     };
-
     this.ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
@@ -78,13 +76,11 @@ class ChatInterface {
         console.error('Failed to parse WebSocket message:', err);
       }
     };
-
     this.ws.onclose = () => {
       this.addSystemMessage('Connection to backend lost. Reconnecting in 3 seconds...');
       this._setInputEnabled(false);
       setTimeout(() => this._connectWebSocket(), 3000);
     };
-
     this.ws.onerror = (error) => {
       console.error('WebSocket Error:', error);
       if (window.app?.orb) window.app.orb.setState('error');
@@ -120,14 +116,12 @@ class ChatInterface {
       case 'status':
         this.addSystemMessage(msg.message);
         break;
-
       case 'error':
         this.addAssistantMessage(`[ERROR] ${msg.message}`);
         this._removeTypingIndicator();
         this._setInputEnabled(true);
         if (window.app?.orb) window.app.orb.setState('idle');
         break;
-
       case 'reply_start':
         this.isStreaming = true;
         this.currentStreamContent = '';
@@ -145,14 +139,12 @@ class ChatInterface {
           this._scrollToBottom();
         }
         break;
-
       case 'reply_end':
         this.isStreaming = false;
         this.currentStreamEl = null;
         this._setInputEnabled(true);
         if (window.app?.orb) window.app.orb.setState('idle');
         break;
-
       case 'tool_confirmation_required':
         this._showConfirmationModal(msg.data);
         break;
@@ -169,7 +161,6 @@ class ChatInterface {
 
     // Add user message to UI
     this.addUserMessage(text);
-
     // Clear input
     this.chatInput.value = '';
     this.chatInput.style.height = 'auto';
@@ -213,7 +204,6 @@ class ChatInterface {
     }
 
     document.getElementById('modal-args').textContent = JSON.stringify(preview.args, null, 2);
-
     // Start Countdown
     let timeLeft = 120;
     const timerEl = document.getElementById('modal-countdown');
