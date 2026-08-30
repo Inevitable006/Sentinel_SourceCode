@@ -1,0 +1,57 @@
+# ─── Node.js ───────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── Python ────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ─── Electron ──────────────────────────────────────
+out/
+release/
+*.asar
+
+# ─── Vite / Frontend Build ─────────────────────────
+frontend/dist/
+
+# ─── AI Models (large binary files) ────────────────
+*.gguf
+*.onnx
+*.bin
+*.safetensors
+
+# ─── IDE ───────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── OS ────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ─── Environment / Secrets ─────────────────────────
+.env
+.env.local
+.env.production
+
+# ─── Logs ──────────────────────────────────────────
+*.log
+
+# ─── Temp ──────────────────────────────────────────
+*.tmp
+*.temp
+backend/llama-bin.zip
+backend/llama-bin/

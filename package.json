@@ -1,0 +1,46 @@
+{
+  "name": "sentinel",
+  "version": "1.0.0",
+  "description": "SENTINEL — Smart Engine for Natural Talk & Intelligent Local Execution. A fully local AI desktop assistant.",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.sentinel.ai",
+    "productName": "SENTINEL",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icons/sentinel.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "runAfterFinish": true
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ]
+  },
+  "author": "SENTINEL Project",
+  "license": "MIT",
+  "devDependencies": {
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.5.0",
+    "chokidar": "^5.0.0",
+    "electron": "^44.0.0",
+    "electron-store": "^10.0.0",
+    "marked": "^15.0.0",
+    "systeminformation": "^5.25.0"
+  }
+}
