@@ -1,14 +1,16 @@
 $ErrorActionPreference = "Stop"
 
+$env:PYTHONPATH = "$PSScriptRoot;$env:PYTHONPATH"
+
 Write-Host "Running all Sentinel backend tests..." -ForegroundColor Cyan
 
 $test_files = @(
-    "test_policy.py",
-    "test_phase8.py",
-    "test_phase9.py",
-    "test_phase9_security.py",
-    "test_research.py",
-    "test_phase10_skills.py"
+    "tests/security/test_policy.py",
+    "tests/integration/test_phase8.py",
+    "tests/integration/test_phase9.py",
+    "tests/security/test_phase9_security.py",
+    "tests/integration/test_research.py",
+    "tests/integration/test_phase10_skills.py"
 )
 
 $failed = 0

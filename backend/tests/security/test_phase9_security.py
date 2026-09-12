@@ -427,14 +427,14 @@ def test_invariant_13():
     import subprocess
     
     r1 = subprocess.run(
-        [".venv/Scripts/python.exe", "test_policy.py"],
-        capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__))
+        [".venv/Scripts/python.exe", "tests/security/test_policy.py"],
+        capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     )
     check("test_policy.py passes", r1.returncode == 0 and "All Policy Engine tests passed" in r1.stdout)
     
     r2 = subprocess.run(
-        [".venv/Scripts/python.exe", "test_phase8.py"],
-        capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__))
+        [".venv/Scripts/python.exe", "tests/integration/test_phase8.py"],
+        capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     )
     check("test_phase8.py passes", "PHASE 8" in r2.stdout)
 

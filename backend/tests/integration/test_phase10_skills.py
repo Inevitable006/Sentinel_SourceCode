@@ -373,6 +373,49 @@ def test_skill_manifests():
 
 
 # ============================================================
+# TEST 13: Subprocess Argument Capture & Python-Native Verification
+# ============================================================
+def test_subprocess_argument_capture():
+    print("\n[Test 13] Subprocess Argument Capture (system_ops)")
+    from app.core.safe_process import safe_process
+    from skills.system_ops import run_system_op
+    import unittest.mock
+
+    # Mock safe_process.run_command to capture args instead of executing
+    with unittest.mock.patch.object(safe_process, 'run_command', return_value=(True, "mocked", "")) as mock_run:
+        # Test get_processes
+        run_system_op("get_processes")
+        cmd_args = mock_run.call_args[0][0]
+        check("get_processes uses fixed command with no interpolation",
+              cmd_args[-1] == "Get-Process | Select-Object Id, ProcessName, CPU, WorkingSet | ConvertTo-Json -Depth 1")
+        
+        # Test get_services
+        run_system_op("get_services")
+        cmd_args = mock_run.call_args[0][0]
+        check("get_services uses fixed command with no interpolation",
+              cmd_args[-1] == "Get-Service | Where-Object Status -eq 'Running' | Select-Object Name, DisplayName | ConvertTo-Json -Depth 1")
+              
+        # Test get_ip_configuration
+        run_system_op("get_ip_configuration")
+        cmd_args = mock_run.call_args[0][0]
+        check("get_ip_configuration uses fixed command with no interpolation",
+              cmd_args[-1] == "Get-NetIPAddress | Select-Object InterfaceAlias, IPAddress | ConvertTo-Json -Depth 1")
+
+        # Test ping_host
+        run_system_op("ping_host", "google.com")
+        cmd_args = mock_run.call_args[0][0]
+        check("ping_host passes target as discrete argument, not interpolated script",
+              cmd_args == [r"c:\windows\system32\ping.exe", "-n", "4", "google.com"])
+              
+        # Test Python-native commands (should NOT call run_command)
+        mock_run.reset_mock()
+        run_system_op("echo_text", "hello")
+        run_system_op("list_directory", "C:\\")
+        check("echo_text and list_directory are Python-native (no subprocess)", 
+              mock_run.call_count == 0)
+
+
+# ============================================================
 # RUN ALL
 # ============================================================
 if __name__ == "__main__":
@@ -400,6 +443,7 @@ if __name__ == "__main__":
     test_governor_integration()
     test_skill_status()
     test_skill_manifests()
+    test_subprocess_argument_capture()
     
     print("\n" + "=" * 60)
     print(f"RESULTS: {passed} passed, {failed} failed, {passed + failed} total")
