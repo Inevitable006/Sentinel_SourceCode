@@ -95,9 +95,8 @@ class ResearchService:
         if self.local_mode:
             return "System Error: Local Only mode is enabled. Web research is disabled."
 
-        from app.core.resource_governor import resource_governor, SystemState
-        if resource_governor.state in [SystemState.EMERGENCY, SystemState.HIGH_LOAD]:
-            return f"System Error: Web research deferred. Sentinel is currently in {resource_governor.state.value} mode to protect system stability."
+        # NOTE: ResourceGovernor state checks are handled centrally by the
+        # PolicyEngine before the executor is called. No redundant check here.
 
         try:
             results = DDGS().text(query, max_results=2)

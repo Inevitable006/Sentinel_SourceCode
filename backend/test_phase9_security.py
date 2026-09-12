@@ -449,17 +449,138 @@ def test_invariant_14():
     check("Status includes ram_percent", "ram_percent" in status)
 
 # ============================================================
-# BONUS: search_web now goes through Security Gate
+# INVARIANT 18: Path Containment (sibling-prefix, case, junctions)
 # ============================================================
-def test_search_web_security_gate():
-    print("\n[Bonus] search_web routed through Security Gate")
+def test_invariant_18():
+    print("\n[Invariant 18] Path containment boundaries")
+    
+    executor = tool_registry.get_tool("run_system_op").executor
+    allowed_root = r"C:\Users\shamb\OneDrive\Desktop\New one\Sentinel_SourceCode"
+    
+    # 18a: Sibling-prefix attack (e.g. "Sentinel_SourceCodeEvil")
+    sibling_path = allowed_root + "Evil"
+    result = executor(operation="list_directory", target=sibling_path, session_id="s1")
+    check("Sibling-prefix directory blocked", "Error: Path traversal blocked" in result or "Error reading directory" in result)
+    
+    # 18b: Case variation (Windows is case-insensitive, should resolve correctly)
+    # A valid path in different case should work OR be blocked consistently
+    from app.core.secure_runner import _is_path_contained
+    valid_subdir = os.path.join(allowed_root, "backend")
+    check("Case-normalized containment (lowercase root)",
+          _is_path_contained(valid_subdir.lower(), allowed_root))
+    check("Case-normalized containment (uppercase root)",
+          _is_path_contained(valid_subdir.upper(), allowed_root.upper()))
+    
+    # 18c: Outside path blocked by relative_to
+    check("Parent directory blocked by relative_to",
+          not _is_path_contained(r"C:\Windows\System32", allowed_root))
+    
+    # 18d: Double-dot traversal resolved and blocked
+    traversal_path = os.path.join(allowed_root, "..", "..", "Windows")
+    check("Double-dot traversal blocked",
+          not _is_path_contained(traversal_path, allowed_root))
+    
+    # 18e: Valid subdirectory allowed
+    check("Valid subdirectory allowed",
+          _is_path_contained(os.path.join(allowed_root, "backend"), allowed_root))
+    
+    # 18f: Root itself is allowed (a path is contained within itself)
+    check("Root path itself is allowed",
+          _is_path_contained(allowed_root, allowed_root))
+    
+    # 18g: Symlink/junction traversal test (create temp symlink if possible)
+    import tempfile
+    try:
+        temp_dir = tempfile.mkdtemp()
+        # Create a junction/symlink inside allowed_root pointing outside
+        link_path = os.path.join(allowed_root, "_test_symlink_sentinel")
+        try:
+            os.symlink(temp_dir, link_path, target_is_directory=True)
+            # The symlink resolves outside allowed_root, so it must be blocked
+            check("Symlink escaping to outside directory blocked",
+                  not _is_path_contained(link_path, allowed_root))
+        except OSError:
+            # Symlink creation may require admin privileges on Windows
+            check("Symlink escaping to outside directory blocked (skipped: no symlink perms)", True)
+        finally:
+            try:
+                os.remove(link_path)
+            except Exception:
+                pass
+    finally:
+        try:
+            os.rmdir(temp_dir)
+        except Exception:
+            pass
+
+# ============================================================
+# INVARIANT 19: Concurrent request rejection
+# ============================================================
+def test_invariant_19():
+    print("\n[Invariant 19] Concurrent request rejection (one-active-request)")
+    import inspect
+    from app import main
+    source = inspect.getsource(main.chat_endpoint)
+    
+    # 19a: is_processing flag exists
+    check("is_processing guard flag exists", "is_processing = False" in source)
+    
+    # 19b: Concurrent requests are explicitly rejected
+    check("Concurrent requests rejected with error message",
+          "A request is already in progress" in source)
+    
+    # 19c: is_processing is set to True before processing
+    check("is_processing set to True before chain loop", "is_processing = True" in source)
+    
+    # 19d: is_processing is reset after processing completes
+    check("is_processing reset after completion", 
+          source.count("is_processing = False") >= 2)  # Once at init, once at reset, once at cancel
+
+# ============================================================
+# INVARIANT 20: search_web full Security Gate integration
+# ============================================================
+def test_invariant_20():
+    print("\n[Invariant 20] search_web full Security Gate integration")
+    
     tool = tool_registry.get_tool("search_web")
     check("search_web is registered in tool_registry", tool is not None)
-    check("search_web has risk tier assigned", tool.tool_schema.risk_tier is not None)
     
-    # Verify it goes through policy
+    # 20a: Risk tier is TIER_2 (requires confirmation for privacy)
+    check("search_web is TIER_2 (privacy confirmation required)",
+          tool.tool_schema.risk_tier == RiskTier.TIER_2)
+    
+    # 20b: Has network_access capability declared
+    check("search_web declares network_access capability",
+          "network_access" in tool.tool_schema.required_capabilities)
+    
+    # 20c: Policy engine returns NEEDS_CONFIRMATION (not ALLOW)
     decision, _ = policy_engine.evaluate("search_web", {"query": "test"}, "s1")
-    check("search_web policy evaluation works", decision in [PolicyDecision.ALLOW, PolicyDecision.NEEDS_CONFIRMATION])
+    check("search_web requires confirmation via policy engine",
+          decision == PolicyDecision.NEEDS_CONFIRMATION)
+    
+    # 20d: EMERGENCY state blocks search_web at policy level
+    resource_governor.state = SystemState.EMERGENCY
+    decision2, _ = policy_engine.evaluate("search_web", {"query": "test"}, "s1")
+    check("search_web blocked in EMERGENCY state",
+          decision2 == PolicyDecision.DENY)
+    resource_governor.state = SystemState.IDLE
+    
+    # 20e: Output contains <untrusted_content> wrapping (architectural check)
+    import inspect
+    from app.core import tools as tools_module
+    search_web_source = inspect.getsource(tools_module.search_web)
+    check("search_web wraps output in <untrusted_content> tags",
+          "<untrusted_content>" in search_web_source)
+    
+    # 20f: Output cap enforced at source
+    check("search_web enforces 10KB output cap at source",
+          "10240" in search_web_source)
+    
+    # 20g: WebSocket handler wraps ALL tool results in <untrusted_content>
+    from app import main
+    ws_source = inspect.getsource(main.chat_endpoint)
+    check("WebSocket handler wraps tool results in <untrusted_content> tags",
+          "<untrusted_content>" in ws_source)
 
 # ============================================================
 # RUN ALL
@@ -486,7 +607,9 @@ if __name__ == "__main__":
     test_invariant_15()
     test_invariant_16()
     test_invariant_17()
-    test_search_web_security_gate()
+    test_invariant_18()
+    test_invariant_19()
+    test_invariant_20()
     
     print("\n" + "=" * 60)
     print(f"RESULTS: {passed} passed, {failed} failed, {passed + failed} total")

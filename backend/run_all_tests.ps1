@@ -17,7 +17,7 @@ foreach ($file in $test_files) {
     Write-Host "Running $file" -ForegroundColor Yellow
     Write-Host "============================================================"
     
-    python $file
+    .venv\Scripts\python $file
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "FAIL: $file returned exit code $LASTEXITCODE" -ForegroundColor Red

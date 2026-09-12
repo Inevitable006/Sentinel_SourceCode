@@ -188,6 +188,7 @@ async def chat_endpoint(websocket: WebSocket):
     # Per-connection cancellation flag and active request tracker
     cancel_event = asyncio.Event()
     active_request_id = None
+    is_processing = False  # One-active-request-per-connection guard
     
     # Initialize DB session and create a new thread for this connection
     db = SessionLocal()
@@ -228,14 +229,23 @@ async def chat_endpoint(websocket: WebSocket):
                 import json
                 data = json.loads(raw_message)
                 
-                # Handle cancellation signal
+                # Handle cancellation signal (always allowed, even during processing)
                 if data.get("type") == "cancel":
                     cancel_event.set()
                     # Cancel any running subprocesses immediately for this specific request
                     if active_request_id:
                         from app.core.safe_process import safe_process
                         safe_process.cancel_job(active_request_id)
+                    is_processing = False
                     await websocket.send_json({"type": "state", "state": "CANCELLED"})
+                    continue
+                
+                # Reject concurrent requests — one active request per connection
+                if is_processing:
+                    await websocket.send_json({
+                        "type": "error", 
+                        "message": "A request is already in progress. Please cancel it first or wait for it to complete."
+                    })
                     continue
                 
                 user_message = data.get("text", "")
@@ -243,9 +253,13 @@ async def chat_endpoint(websocket: WebSocket):
                 active_request_id = data.get("request_id", str(uuid.uuid4()))
             except Exception:
                 # Fallback for raw text
+                if is_processing:
+                    continue
                 user_message = raw_message
                 voice_enabled = False
                 active_request_id = str(uuid.uuid4())
+            
+            is_processing = True
             
             # Phase 8: Explicit Memory Creation / Deletion
             lower_msg = user_message.lower()
@@ -394,6 +408,9 @@ async def chat_endpoint(websocket: WebSocket):
             if chain_depth >= MAX_CHAIN_DEPTH:
                 await websocket.send_json({"type": "status", "message": "Max tool chain depth reached."})
                 await websocket.send_json({"type": "state", "state": "COMPLETED"})
+            
+            # Release the processing lock so new requests can be accepted
+            is_processing = False
             
     except WebSocketDisconnect:
         print("Client disconnected.")
