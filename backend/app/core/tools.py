@@ -54,8 +54,8 @@ tool_registry.register(ToolDefinition(
 ))
 
 
-def execute_tool(tool_name: str, args: dict, session_id: str, confirmation_token: str = None) -> str:
+def execute_tool(tool_name: str, args: dict, session_id: str, request_id: str = None, confirmation_token: str = None) -> str:
     """Dispatches ALL tool calls through the secure runner. No bypasses."""
     from app.core.secure_runner import secure_runner
-    result = secure_runner.execute(tool_name, args, session_id, confirmation_token)
+    result = secure_runner.execute(tool_name, args, session_id, request_id, confirmation_token)
     return json.dumps(result)

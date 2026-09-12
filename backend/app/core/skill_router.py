@@ -323,13 +323,19 @@ class SkillRouter:
             "gpu_policy": record.manifest.gpu_policy.value,
         }
 
-    def check_confidence(self, tool_name: str, confidence: float) -> bool:
+    def check_confidence(self, tool_name: str, confidence: any) -> bool:
         """Returns True if confidence meets the skill's threshold.
-        If confidence is below threshold, the caller should escalate
+        If confidence is below threshold or unknown, the caller should escalate
         to NEEDS_CONFIRMATION regardless of tier."""
         manifest = self.resolve_skill(tool_name)
         if manifest and manifest.confidence_threshold > 0:
-            return confidence >= manifest.confidence_threshold
+            if confidence == "unknown":
+                return False
+            try:
+                conf_val = float(confidence)
+                return conf_val >= manifest.confidence_threshold
+            except (ValueError, TypeError):
+                return False
         return True  # No threshold set, confidence is sufficient
 
 

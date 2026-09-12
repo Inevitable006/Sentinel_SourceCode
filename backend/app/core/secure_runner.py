@@ -8,7 +8,7 @@ import psutil
 import time
 
 class SecureRunner:
-    def execute(self, tool_name: str, args: dict, session_id: str, token: str = None) -> Dict[str, Any]:
+    def execute(self, tool_name: str, args: dict, session_id: str, request_id: str = None, token: str = None) -> Dict[str, Any]:
         """Executes a tool with strict policy enforcement."""
         
         # 1. Policy Evaluation
@@ -65,12 +65,14 @@ class SecureRunner:
         try:
             audit_logger.log_event("execution_started", {"tool_name": tool_name, "session_id": session_id})
             
-            # Inject session_id into args if the executor supports it
+            # Inject session_id or request_id into args if the executor supports it
             import inspect
             sig = inspect.signature(tool_def.executor)
             exec_args = args.copy()
             if "session_id" in sig.parameters:
                 exec_args["session_id"] = session_id
+            if "request_id" in sig.parameters:
+                exec_args["request_id"] = request_id
                 
             result = tool_def.executor(**exec_args)
             duration = time.time() - start_time

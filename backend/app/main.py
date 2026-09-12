@@ -375,7 +375,7 @@ async def chat_endpoint(websocket: WebSocket):
                         
                     tool_name = tool_data["name"]
                     tool_args = tool_data.get("args", {})
-                    tool_confidence = tool_data.get("confidence", 1.0)
+                    tool_confidence = tool_data.get("confidence", "unknown")
                     
                     # Phase 10: Confidence-based escalation
                     # If the LLM reports low confidence and the skill has a threshold,
@@ -383,7 +383,7 @@ async def chat_endpoint(websocket: WebSocket):
                     try:
                         from app.core.skill_router import skill_router
                         if not skill_router.check_confidence(tool_name, tool_confidence):
-                            await websocket.send_json({"type": "status", "message": f"Low confidence ({tool_confidence:.0%}) for '{tool_name}'. Requesting confirmation."})
+                            await websocket.send_json({"type": "status", "message": f"Low/Unknown confidence for '{tool_name}'. Requesting confirmation."})
                     except Exception:
                         pass  # Skill router not available for legacy tools
                     
@@ -393,7 +393,7 @@ async def chat_endpoint(websocket: WebSocket):
                     # Execute tool in a separate thread so we don't block the WebSocket loop
                     loop = asyncio.get_event_loop()
                     from app.core.tools import execute_tool
-                    result = await loop.run_in_executor(None, execute_tool, tool_name, tool_args, active_request_id)
+                    result = await loop.run_in_executor(None, execute_tool, tool_name, tool_args, session_id, active_request_id)
                     
                     # If this was a Needs Confirmation pause, stop the chain and prompt user
                     if isinstance(result, dict) and result.get("status") == "needs_confirmation":
