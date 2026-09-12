@@ -27,9 +27,9 @@ const ChatArea: React.FC = () => {
   // Initialize WebSocket connection
   useEffect(() => {
     const ws = new WebSocket('ws://127.0.0.1:8000/ws/chat');
-    
+
     ws.onopen = () => setIsConnected(true);
-    
+
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'reply') {
@@ -41,7 +41,7 @@ const ChatArea: React.FC = () => {
         }]);
       }
     };
-    
+
     ws.onclose = () => setIsConnected(false);
     wsRef.current = ws;
 

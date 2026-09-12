@@ -8,7 +8,7 @@ import psutil
 import time
 
 class SecureRunner:
-    def execute(self, tool_name: str, args: dict, session_id: str, token: str = None) -> Dict[str, Any]:
+    def execute(self, tool_name: str, args: dict, session_id: str, request_id: str = None, token: str = None) -> Dict[str, Any]:
         """Executes a tool with strict policy enforcement."""
         
         # 1. Policy Evaluation
@@ -65,12 +65,14 @@ class SecureRunner:
         try:
             audit_logger.log_event("execution_started", {"tool_name": tool_name, "session_id": session_id})
             
-            # Inject session_id into args if the executor supports it
+            # Inject session_id or request_id into args if the executor supports it
             import inspect
             sig = inspect.signature(tool_def.executor)
             exec_args = args.copy()
             if "session_id" in sig.parameters:
                 exec_args["session_id"] = session_id
+            if "request_id" in sig.parameters:
+                exec_args["request_id"] = request_id
                 
             result = tool_def.executor(**exec_args)
             duration = time.time() - start_time
@@ -164,6 +166,23 @@ tool_registry.register(ToolDefinition(
     executor=test_confirmation_action
 ))
 
+def _is_path_contained(child: str, parent: str) -> bool:
+    """Case-insensitive, symlink-resolving containment check.
+    
+    Uses Path.relative_to() which raises ValueError if child is not
+    a proper descendant of parent. This is immune to sibling-prefix
+    attacks (e.g. 'ProjectEvil' passing a check for 'Project').
+    """
+    import os
+    from pathlib import Path
+    try:
+        child_resolved = Path(os.path.realpath(child)).resolve()
+        parent_resolved = Path(os.path.realpath(parent)).resolve()
+        child_resolved.relative_to(parent_resolved)
+        return True
+    except (ValueError, OSError):
+        return False
+
 def run_system_op(operation: str, target: str = "", session_id: str = "default"):
     import re
     import os
@@ -184,11 +203,12 @@ def run_system_op(operation: str, target: str = "", session_id: str = "default")
         
     elif operation == "list_directory":
         # Native Python implementation (no shell injection possible)
-        allowed_root = os.path.realpath(r"C:\Users\shamb\OneDrive\Desktop\New one\Sentinel_SourceCode")
-        target_path = os.path.realpath(target) if target else allowed_root
+        allowed_root = r"C:\Users\shamb\OneDrive\Desktop\New one\Sentinel_SourceCode"
+        target_path = os.path.realpath(target) if target else os.path.realpath(allowed_root)
         
-        # Path validation: must be inside allowed_root and realpath prevents symlink escapes
-        if not target_path.startswith(allowed_root):
+        # Path validation: canonical containment check immune to sibling-prefix,
+        # case variation, symlink/junction, and traversal attacks
+        if not _is_path_contained(target_path, allowed_root):
             return "Error: Path traversal blocked. Cannot access directories outside Sentinel_SourceCode."
             
         try:

@@ -1,20 +1,15 @@
-import httpx
-from bs4 import BeautifulSoup
-from ddgs import DDGS
-from urllib.parse import urlparse
-import socket
-import ipaddress
 import json
 import time
+import asyncio
+import re
 from app.core.paths import SENTINEL_DATA_DIR
+from app.core.request_context import request_context
+from app.core.network_utils import SafeAsyncClient
 
 HISTORY_FILE = SENTINEL_DATA_DIR / "research_history.json"
 
 class ResearchService:
     def __init__(self):
-        self.max_redirects = 3
-        self.timeout = 5.0
-        self.max_size = 250 * 1024 # 250 KB
         self.local_mode = False
         self._load_history()
 
@@ -42,65 +37,40 @@ class ResearchService:
     def get_history(self):
         return self.history
 
-    def is_safe_url(self, url: str) -> bool:
-        """SSRF protection: checks if the URL points to a private/local IP."""
+    async def _async_search(self, query: str) -> str:
+        """Asynchronous DDG search execution using SafeAsyncClient."""
+        # DuckDuckGo endpoint is fixed and trusted.
+        # This function only queries the fixed trusted search endpoint and returns metadata/snippets.
+        
         try:
-            parsed = urlparse(url)
-            if parsed.scheme != "https":
-                return False
+            url = f"https://html.duckduckgo.com/html/?q={query}"
+            async with SafeAsyncClient() as client:
+                response = await client.safe_request("GET", url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=5.0)
+            
+            if response.status_code != 200:
+                return f"Search failed with status: {response.status_code}"
                 
-            hostname = parsed.hostname
-            if not hostname:
-                return False
-
-            ip = socket.gethostbyname(hostname)
-            ip_obj = ipaddress.ip_address(ip)
-            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast:
-                return False
-            return True
-        except Exception:
-            return False
-
-    def fetch_url(self, url: str) -> str:
-        if not self.is_safe_url(url):
-            return "Error: URL is invalid, non-HTTPS, or points to a restricted local network address (SSRF blocked)."
-
-        try:
-            with httpx.Client(follow_redirects=True, max_redirects=self.max_redirects, timeout=self.timeout) as client:
-                response = client.get(url)
-                response.raise_for_status()
+            html = response.text
+            
+            # Simple regex to extract search results from HTML
+            results = []
+            pattern = r'<a class="result__url" href="([^"]+)">(.*?)</a>.*?<a class="result__snippet[^>]*>(.*?)</a>'
+            for match in re.finditer(pattern, html, re.DOTALL | re.IGNORECASE):
+                if len(results) >= 2:
+                    break
+                url_raw = match.group(1).strip()
+                title = re.sub(r'<[^>]+>', '', match.group(2)).strip()
+                snippet = re.sub(r'<[^>]+>', '', match.group(3)).strip()
                 
-                # Check size
-                content_length = response.headers.get("Content-Length")
-                if content_length and int(content_length) > self.max_size:
-                    return f"Error: Page too large ({content_length} bytes)."
-                    
-                content = response.content
-                if len(content) > self.max_size:
-                    return "Error: Page content exceeds size limit."
-                    
-                soup = BeautifulSoup(content, 'html.parser')
+                # duckduckgo redirects via /l/?uddg=...
+                if "uddg=" in url_raw:
+                    import urllib.parse
+                    parsed = urllib.parse.parse_qs(urllib.parse.urlparse(url_raw).query)
+                    if "uddg" in parsed:
+                        url_raw = parsed["uddg"][0]
                 
-                # Remove script and style elements
-                for script in soup(["script", "style", "nav", "footer", "header"]):
-                    script.extract()
-                    
-                text = soup.get_text(separator=' ', strip=True)
-                # Truncate text to a reasonable length for the LLM
-                return text[:5000]
-        except Exception as e:
-            return f"Error fetching {url}: {e}"
+                results.append({"href": url_raw, "title": title, "body": snippet})
 
-    def search(self, query: str) -> str:
-        if self.local_mode:
-            return "System Error: Local Only mode is enabled. Web research is disabled."
-
-        from app.core.resource_governor import resource_governor, SystemState
-        if resource_governor.state in [SystemState.EMERGENCY, SystemState.HIGH_LOAD]:
-            return f"System Error: Web research deferred. Sentinel is currently in {resource_governor.state.value} mode to protect system stability."
-
-        try:
-            results = DDGS().text(query, max_results=2)
             if not results:
                 return "No results found."
             
@@ -112,19 +82,44 @@ class ResearchService:
                 snippet = r.get("body")
                 
                 self.history.append({"query": query, "url": url, "title": title, "timestamp": time.time()})
-                self._save_history()
-                
-                page_text = self.fetch_url(url)
                 
                 output += f"Source: [{title}]({url})\n"
-                output += f"Snippet: {snippet}\n"
-                if not page_text.startswith("Error"):
-                    output += f"Content: {page_text[:1500]}...\n\n"
-                else:
-                    output += f"Content: {page_text}\n\n"
-                    
+                output += f"Snippet: {snippet}\n\n"
+                
+            self._save_history()
             return output
         except Exception as e:
             return f"Web search failed: {e}"
+
+    def search(self, query: str, request_id: str = None) -> str:
+        """
+        Executes a web search.
+        If request_id is provided, it binds the async task to the request context
+        for genuine cancellation.
+        """
+        if self.local_mode:
+            return "System Error: Local Only mode is enabled. Web research is disabled."
+
+        # We must run the async search within a new event loop or the current one
+        # since this is called from a synchronous thread executor.
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        task = loop.create_task(self._async_search(query))
+        
+        if request_id:
+            request_context.register_task(request_id, task)
+            
+        try:
+            result = loop.run_until_complete(task)
+            return result
+        except asyncio.CancelledError:
+            return "Error: Web research task was cancelled by the user."
+        except Exception as e:
+            return f"Web search failed: {e}"
+        finally:
+            if request_id:
+                request_context.unregister_task(request_id)
+            loop.close()
 
 research_service = ResearchService()

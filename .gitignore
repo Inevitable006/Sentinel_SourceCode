@@ -54,4 +54,6 @@ Desktop.ini
 *.tmp
 *.temp
 backend/llama-bin.zip
-backend/llama-bin/
+backend/llama-bin/*.dll
+backend/llama-bin/*.exe
+backend/models/*.gguf

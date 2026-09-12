@@ -30,6 +30,12 @@ async def startup_event():
     Base.metadata.create_all(bind=engine)
     # Start Resource Governor
     resource_governor.start()
+    # Phase 10: Initialize Skill System
+    try:
+        from app.core.skill_loader import register_all_skills
+        register_all_skills()
+    except Exception as e:
+        print(f"[Startup] Skill loader failed (non-fatal): {e}")
 
 @app.get("/api/governor/status")
 def get_governor_status():
@@ -188,6 +194,7 @@ async def chat_endpoint(websocket: WebSocket):
     # Per-connection cancellation flag and active request tracker
     cancel_event = asyncio.Event()
     active_request_id = None
+    is_processing = False  # One-active-request-per-connection guard
     
     # Initialize DB session and create a new thread for this connection
     db = SessionLocal()
@@ -228,14 +235,23 @@ async def chat_endpoint(websocket: WebSocket):
                 import json
                 data = json.loads(raw_message)
                 
-                # Handle cancellation signal
+                # Handle cancellation signal (always allowed, even during processing)
                 if data.get("type") == "cancel":
                     cancel_event.set()
                     # Cancel any running subprocesses immediately for this specific request
                     if active_request_id:
                         from app.core.safe_process import safe_process
                         safe_process.cancel_job(active_request_id)
+                    is_processing = False
                     await websocket.send_json({"type": "state", "state": "CANCELLED"})
+                    continue
+                
+                # Reject concurrent requests — one active request per connection
+                if is_processing:
+                    await websocket.send_json({
+                        "type": "error", 
+                        "message": "A request is already in progress. Please cancel it first or wait for it to complete."
+                    })
                     continue
                 
                 user_message = data.get("text", "")
@@ -243,9 +259,13 @@ async def chat_endpoint(websocket: WebSocket):
                 active_request_id = data.get("request_id", str(uuid.uuid4()))
             except Exception:
                 # Fallback for raw text
+                if is_processing:
+                    continue
                 user_message = raw_message
                 voice_enabled = False
                 active_request_id = str(uuid.uuid4())
+            
+            is_processing = True
             
             # Phase 8: Explicit Memory Creation / Deletion
             lower_msg = user_message.lower()
@@ -355,6 +375,17 @@ async def chat_endpoint(websocket: WebSocket):
                         
                     tool_name = tool_data["name"]
                     tool_args = tool_data.get("args", {})
+                    tool_confidence = tool_data.get("confidence", "unknown")
+                    
+                    # Phase 10: Confidence-based escalation
+                    # If the LLM reports low confidence and the skill has a threshold,
+                    # we escalate to confirmation regardless of tier.
+                    try:
+                        from app.core.skill_router import skill_router
+                        if not skill_router.check_confidence(tool_name, tool_confidence):
+                            await websocket.send_json({"type": "status", "message": f"Low/Unknown confidence for '{tool_name}'. Requesting confirmation."})
+                    except Exception:
+                        pass  # Skill router not available for legacy tools
                     
                     await websocket.send_json({"type": "state", "state": "EXECUTING"})
                     await websocket.send_json({"type": "status", "message": f"Running tool: {tool_name}..."})
@@ -362,10 +393,24 @@ async def chat_endpoint(websocket: WebSocket):
                     # Execute tool in a separate thread so we don't block the WebSocket loop
                     loop = asyncio.get_event_loop()
                     from app.core.tools import execute_tool
-                    result = await loop.run_in_executor(None, execute_tool, tool_name, tool_args, active_request_id)
+                    result = await loop.run_in_executor(None, execute_tool, tool_name, tool_args, session_id, active_request_id)
                     
                     # If this was a Needs Confirmation pause, stop the chain and prompt user
                     if isinstance(result, dict) and result.get("status") == "needs_confirmation":
+                            # Phase 10: Enrich confirmation payload with skill metadata
+                            try:
+                                from app.core.skill_router import skill_router
+                                skill_manifest = skill_router.resolve_skill(tool_name)
+                                if skill_manifest:
+                                    result["skill_info"] = {
+                                        "skill_name": skill_manifest.name,
+                                        "skill_description": skill_manifest.description,
+                                        "capabilities": [c.value for c in skill_manifest.required_capabilities],
+                                        "gpu_policy": skill_manifest.gpu_policy.value,
+                                    }
+                            except Exception:
+                                pass  # Legacy tool without skill manifest
+                            
                             await websocket.send_json({"type": "state", "state": "WAITING_FOR_PERMISSION"})
                             msg = f"Action '{tool_name}' requires your confirmation. Please review the details."
                             await websocket.send_json({"type": "status", "message": msg})
@@ -394,6 +439,9 @@ async def chat_endpoint(websocket: WebSocket):
             if chain_depth >= MAX_CHAIN_DEPTH:
                 await websocket.send_json({"type": "status", "message": "Max tool chain depth reached."})
                 await websocket.send_json({"type": "state", "state": "COMPLETED"})
+            
+            # Release the processing lock so new requests can be accepted
+            is_processing = False
             
     except WebSocketDisconnect:
         print("Client disconnected.")

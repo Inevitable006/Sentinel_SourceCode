@@ -98,7 +98,6 @@ async function bootSentinel() {
 
   // STEP 6: Initialize memory subsystems (Disabled for Phase 1)
   console.log('[SENTINEL] Step 6/7: Memory subsystems deferred to Python backend');
-  
   // STEP 7: Initialize plugin subsystem & evolution loop (Disabled for Phase 1)
   console.log('[SENTINEL] Step 7/8: Plugin subsystems deferred to Python backend');
 
@@ -106,34 +105,37 @@ async function bootSentinel() {
   console.log('[SENTINEL] Step 7.5/8: Spawning Python AI Backend...');
   const { spawn } = require('child_process');
   const crypto = require('crypto');
-  
+
   // Generate a cryptographically secure, single-use session token for this boot
   global.SENTINEL_SESSION_TOKEN = crypto.randomBytes(32).toString('hex');
   logger.info('system', 'Generated ephemeral session token for backend authentication');
-  
+
   // Point to the virtual environment python executable
   const pythonCmd = path.join(__dirname, '../../backend/.venv/Scripts/python.exe');
   const serverScript = path.join(__dirname, '../../backend/run_server.py');
-  
+
   let aiProcess = null;
   let retryCount = 0;
   const MAX_RETRIES = 3;
-  
+
   function spawnBackend() {
     try {
       logger.info('system', `Spawning Python backend (Attempt ${retryCount + 1}/${MAX_RETRIES + 1})...`);
-      
+
       const backendEnv = { ...process.env, SENTINEL_SESSION_TOKEN: global.SENTINEL_SESSION_TOKEN };
-      
+
       aiProcess = spawn(pythonCmd, [serverScript], {
         cwd: path.join(__dirname, '../../'),
         stdio: 'pipe',
         env: backendEnv
       });
-      
+      aiProcess.on('error', (err) => {
+        logger.error('system', 'Backend spawn error (expected in packaged UI test)', { error: err.message });
+      });
+
       aiProcess.stdout.on('data', (data) => console.log(`[Python AI] ${data}`));
       aiProcess.stderr.on('data', (data) => console.error(`[Python AI] ${data}`));
-      
+
       aiProcess.on('exit', (code) => {
         logger.warn('system', `Python backend exited with code ${code}`);
         if (code !== 0 && !isQuitting) {
@@ -151,14 +153,13 @@ async function bootSentinel() {
           }
         }
       });
-      
     } catch (err) {
       logger.error('system', 'Failed to spawn Python backend', { error: err.message });
     }
   }
-  
+
   spawnBackend();
-  
+
   app.on('before-quit', () => {
     if (aiProcess) aiProcess.kill();
   });
@@ -256,7 +257,7 @@ function createTray() {
   const iconSize = 16;
 
   tray = new Tray(nativeImage.createFromBuffer(
-    Buffer.alloc(iconSize * iconSize * 4, 0), 
+    Buffer.alloc(iconSize * iconSize * 4, 0),
     { width: iconSize, height: iconSize }
   ));
 
@@ -533,14 +534,14 @@ app.on('before-quit', () => {
 
   // Clean shutdown sequence
   logger.info('system', 'SENTINEL shutting down...');
-  
+
   // Shutdown modules
-  moduleManager.shutdownAll().catch(() => {});
-  
+  moduleManager.shutdownAll().catch(() => { });
+
   // Save config and clear crash flag
   configManager.shutdown();
   errorHandler.shutdown();
-  
+
   // Flush logs last
   logger.shutdown();
 });

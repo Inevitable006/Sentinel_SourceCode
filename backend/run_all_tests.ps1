@@ -1,13 +1,16 @@
 $ErrorActionPreference = "Stop"
 
+$env:PYTHONPATH = "$PSScriptRoot;$env:PYTHONPATH"
+
 Write-Host "Running all Sentinel backend tests..." -ForegroundColor Cyan
 
 $test_files = @(
-    "test_policy.py",
-    "test_phase8.py",
-    "test_phase9.py",
-    "test_phase9_security.py",
-    "test_research.py"
+    "tests/security/test_policy.py",
+    "tests/integration/test_phase8.py",
+    "tests/integration/test_phase9.py",
+    "tests/security/test_phase9_security.py",
+    "tests/integration/test_research.py",
+    "tests/integration/test_phase10_skills.py"
 )
 
 $failed = 0
@@ -17,7 +20,7 @@ foreach ($file in $test_files) {
     Write-Host "Running $file" -ForegroundColor Yellow
     Write-Host "============================================================"
     
-    python $file
+    .venv\Scripts\python $file
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "FAIL: $file returned exit code $LASTEXITCODE" -ForegroundColor Red

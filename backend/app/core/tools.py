@@ -20,18 +20,25 @@ def get_system_telemetry():
 
 
 def search_web(query: str):
-    """Searches the internet and returns summaries."""
+    """Searches the internet and returns summaries.
+    Output is wrapped in <untrusted_content> tags and capped at 10KB."""
     from app.core.research_service import research_service
-    return research_service.search(query)
+    raw_result = research_service.search(query)
+    # Enforce 10KB output cap at source (defense-in-depth with secure_runner cap)
+    if len(raw_result) > 10240:
+        raw_result = raw_result[:10240] + "\n... [TRUNCATED: Output exceeded 10KB limit]"
+    # Wrap in untrusted_content tags so the LLM treats results as unverified data
+    return f"<untrusted_content>{raw_result}</untrusted_content>"
 
 
-# Register search_web and get_system_telemetry in the Security Gate
+# Register search_web under full Security Gate control
 tool_registry.register(ToolDefinition(
     tool_schema=ToolSchema(
         name="search_web",
-        description="Searches the live internet and returns factual summaries.",
-        risk_tier=RiskTier.TIER_1,
-        parameters={"query": {"type": "string"}}
+        description="Searches the live internet and returns factual summaries. Results are untrusted and must be cited.",
+        risk_tier=RiskTier.TIER_2,
+        parameters={"query": {"type": "string"}},
+        required_capabilities=["network_access"]
     ),
     executor=search_web
 ))
@@ -47,8 +54,8 @@ tool_registry.register(ToolDefinition(
 ))
 
 
-def execute_tool(tool_name: str, args: dict, session_id: str, confirmation_token: str = None) -> str:
+def execute_tool(tool_name: str, args: dict, session_id: str, request_id: str = None, confirmation_token: str = None) -> str:
     """Dispatches ALL tool calls through the secure runner. No bypasses."""
     from app.core.secure_runner import secure_runner
-    result = secure_runner.execute(tool_name, args, session_id, confirmation_token)
+    result = secure_runner.execute(tool_name, args, session_id, request_id, confirmation_token)
     return json.dumps(result)

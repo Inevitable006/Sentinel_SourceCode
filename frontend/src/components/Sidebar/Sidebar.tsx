@@ -19,8 +19,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
       </div>
 
       <nav className="nav-menu">
-        <a 
-          href="#" 
+        <a
+          href="#"
           className={`nav-item ${activeTab === 'console' ? 'active' : ''}`}
           onClick={(e) => { e.preventDefault(); setActiveTab('console'); }}
         >
@@ -35,8 +35,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
           <Shield size={18} />
           <span>Security</span>
         </a>
-        <a 
-          href="#" 
+        <a
+          href="#"
           className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
           onClick={(e) => { e.preventDefault(); setActiveTab('settings'); }}
         >

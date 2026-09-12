@@ -5,7 +5,7 @@ const { logger } = require('../../core/logger');
 class OSControlPlugin extends BasePlugin {
   constructor() {
     super('os-control', 'Provides safe OS-level commands like checking time and launching applications.');
-    
+
     this.registerTool({
       name: 'get_time',
       description: 'Gets the current system time.',

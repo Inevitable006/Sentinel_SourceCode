@@ -25,7 +25,9 @@
       "runAfterFinish": true
     },
     "files": [
-      "src/**/*",
+      "src/main/**/*",
+      "src/preload.js",
+      "frontend/dist/**/*",
       "assets/**/*",
       "package.json"
     ]
@@ -33,12 +35,12 @@
   "author": "SENTINEL Project",
   "license": "MIT",
   "devDependencies": {
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "electron": "^44.0.0"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.5.0",
     "chokidar": "^5.0.0",
-    "electron": "^44.0.0",
     "electron-store": "^10.0.0",
     "marked": "^15.0.0",
     "systeminformation": "^5.25.0"
