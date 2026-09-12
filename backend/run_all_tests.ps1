@@ -7,7 +7,8 @@ $test_files = @(
     "test_phase8.py",
     "test_phase9.py",
     "test_phase9_security.py",
-    "test_research.py"
+    "test_research.py",
+    "test_phase10_skills.py"
 )
 
 $failed = 0

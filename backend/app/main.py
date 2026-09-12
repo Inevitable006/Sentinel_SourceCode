@@ -30,6 +30,12 @@ async def startup_event():
     Base.metadata.create_all(bind=engine)
     # Start Resource Governor
     resource_governor.start()
+    # Phase 10: Initialize Skill System
+    try:
+        from app.core.skill_loader import register_all_skills
+        register_all_skills()
+    except Exception as e:
+        print(f"[Startup] Skill loader failed (non-fatal): {e}")
 
 @app.get("/api/governor/status")
 def get_governor_status():
@@ -369,6 +375,17 @@ async def chat_endpoint(websocket: WebSocket):
                         
                     tool_name = tool_data["name"]
                     tool_args = tool_data.get("args", {})
+                    tool_confidence = tool_data.get("confidence", 1.0)
+                    
+                    # Phase 10: Confidence-based escalation
+                    # If the LLM reports low confidence and the skill has a threshold,
+                    # we escalate to confirmation regardless of tier.
+                    try:
+                        from app.core.skill_router import skill_router
+                        if not skill_router.check_confidence(tool_name, tool_confidence):
+                            await websocket.send_json({"type": "status", "message": f"Low confidence ({tool_confidence:.0%}) for '{tool_name}'. Requesting confirmation."})
+                    except Exception:
+                        pass  # Skill router not available for legacy tools
                     
                     await websocket.send_json({"type": "state", "state": "EXECUTING"})
                     await websocket.send_json({"type": "status", "message": f"Running tool: {tool_name}..."})
@@ -380,6 +397,20 @@ async def chat_endpoint(websocket: WebSocket):
                     
                     # If this was a Needs Confirmation pause, stop the chain and prompt user
                     if isinstance(result, dict) and result.get("status") == "needs_confirmation":
+                            # Phase 10: Enrich confirmation payload with skill metadata
+                            try:
+                                from app.core.skill_router import skill_router
+                                skill_manifest = skill_router.resolve_skill(tool_name)
+                                if skill_manifest:
+                                    result["skill_info"] = {
+                                        "skill_name": skill_manifest.name,
+                                        "skill_description": skill_manifest.description,
+                                        "capabilities": [c.value for c in skill_manifest.required_capabilities],
+                                        "gpu_policy": skill_manifest.gpu_policy.value,
+                                    }
+                            except Exception:
+                                pass  # Legacy tool without skill manifest
+                            
                             await websocket.send_json({"type": "state", "state": "WAITING_FOR_PERMISSION"})
                             msg = f"Action '{tool_name}' requires your confirmation. Please review the details."
                             await websocket.send_json({"type": "status", "message": msg})
