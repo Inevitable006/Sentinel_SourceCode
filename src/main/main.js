@@ -129,6 +129,9 @@ async function bootSentinel() {
         stdio: 'pipe',
         env: backendEnv
       });
+      aiProcess.on('error', (err) => {
+        logger.error('system', 'Backend spawn error (expected in packaged UI test)', { error: err.message });
+      });
 
       aiProcess.stdout.on('data', (data) => console.log(`[Python AI] ${data}`));
       aiProcess.stderr.on('data', (data) => console.error(`[Python AI] ${data}`));
@@ -154,12 +157,6 @@ async function bootSentinel() {
       logger.error('system', 'Failed to spawn Python backend', { error: err.message });
     }
   }
-
-  spawnBackend();
-
-  app.on('before-quit', () => {
-    if (aiProcess) aiProcess.kill();
-  });
 
   spawnBackend();
 
