@@ -233,6 +233,34 @@ def register_all_skills():
         "skill_get_market_data": "get_market_data",
     })
 
+    # ── App Control ──────────────────────────────────────────
+    skill_router.register_skill(SkillManifest(
+        name="app_control",
+        version="1.0.0",
+        description="Executes automation scripts inside external applications locally (e.g., Blender). Requires explicit user confirmation.",
+        risk_tier=RiskTier.TIER_3,
+        required_capabilities=[SkillCapability.PROCESS_EXEC, SkillCapability.FILE_WRITE],
+        tools=[
+            SkillToolSchema(
+                name="skill_run_blender_script",
+                description="Executes a Python script using bpy inside a headless Blender instance.",
+                parameters={
+                    "script_code": {"type": "string", "description": "The raw Python code to execute."},
+                    "blend_file_path": {"type": "string", "description": "Optional path to a .blend file to open before running the script."}
+                },
+                required_capabilities=["process_exec", "file_write"]
+            ),
+        ],
+        entry_point="skills.app_control",
+        lazy_load=True,
+        gpu_policy=GpuPolicy.FORBIDDEN,
+        requires_confirmation=True,
+    ))
+    
+    _register_function_aliases("app_control", {
+        "skill_run_blender_script": "run_blender_script",
+    })
+
     print(f"[SkillLoader] Registered {len(skill_router.get_all_manifests())} skills.")
 
 
