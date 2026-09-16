@@ -2,9 +2,12 @@ import os
 import base64
 import threading
 from io import BytesIO
+import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 import PIL.Image
+
+logger = logging.getLogger(__name__)
 
 from app.core.resource_governor import resource_governor, SystemState
 
@@ -114,10 +117,11 @@ class LocalVisionAdapter(VisionModelAdapter):
                         verbose=False
                     )
                 except Exception as e:
+                    logger.error(f"Vision model load failed: {e}")
                     return {
                         "ok": False,
                         "error": "VISION_MODEL_LOAD_FAILED",
-                        "content": str(e)
+                        "content": None
                     }
 
             # Resize the image for VRAM safety
@@ -145,10 +149,11 @@ class LocalVisionAdapter(VisionModelAdapter):
                     "content": content
                 }
             except Exception as e:
+                logger.error(f"Vision inference failed: {e}")
                 return {
                     "ok": False,
                     "error": "VISION_INFERENCE_FAILED",
-                    "content": str(e)
+                    "content": None
                 }
 
         finally:
