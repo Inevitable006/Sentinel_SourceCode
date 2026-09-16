@@ -183,6 +183,31 @@ def register_all_skills():
         "skill_execute_python_code": "execute_python_code",
     })
 
+    # ── Document Analysis ────────────────────────────────────
+    skill_router.register_skill(SkillManifest(
+        name="document_analysis",
+        version="1.0.0",
+        description="Reads and extracts text from local files (TXT, CSV, JSON, MD) with strict path containment.",
+        risk_tier=RiskTier.TIER_2,
+        required_capabilities=[],
+        tools=[
+            SkillToolSchema(
+                name="skill_read_document",
+                description="Reads the text content of a local file safely. Enforces canonical path containment and output truncation.",
+                parameters={"file_path": {"type": "string"}},
+                required_capabilities=[]
+            ),
+        ],
+        entry_point="skills.document_analysis",
+        lazy_load=True,
+        gpu_policy=GpuPolicy.FORBIDDEN,
+        requires_confirmation=True,
+    ))
+    
+    _register_function_aliases("document_analysis", {
+        "skill_read_document": "read_document",
+    })
+
     print(f"[SkillLoader] Registered {len(skill_router.get_all_manifests())} skills.")
 
 

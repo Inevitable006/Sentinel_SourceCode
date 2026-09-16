@@ -356,7 +356,7 @@ def test_skill_status():
     
     # All manifests
     manifests = skill_router.get_all_manifests()
-    check("get_all_manifests returns 4 skills", len(manifests) == 4)
+    check("get_all_manifests returns 5 skills", len(manifests) == 5)
 
 
 # ============================================================
@@ -371,6 +371,7 @@ def test_skill_manifests():
     check("system_ops in manifests", "system_ops" in names)
     check("web_research in manifests", "web_research" in names)
     check("python_coding in manifests", "python_coding" in names)
+    check("document_analysis in manifests", "document_analysis" in names)
 
 
 # ============================================================
