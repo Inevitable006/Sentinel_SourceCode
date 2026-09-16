@@ -4,8 +4,16 @@ import PIL.Image
 from PIL import UnidentifiedImageError
 
 class VisionService:
+    # V1-B3: Hard resource limits
+    MAX_FILE_SIZE = 15 * 1024 * 1024  # 15 MB
+    MAX_WIDTH = 4096
+    MAX_HEIGHT = 4096
+    MAX_PIXELS = 4096 * 4096  # ~16.7 million pixels
+
     def __init__(self):
         self.allowed_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+        # Enforce Pillow's native decompression bomb limit
+        PIL.Image.MAX_IMAGE_PIXELS = self.MAX_PIXELS
 
     def validate_image_path(self, image_path: str) -> bool:
         """
@@ -49,6 +57,13 @@ class VisionService:
         if not self.validate_image_path(image_path):
             return None
 
+        # V1-B3.2: File-size enforcement before opening
+        try:
+            if os.path.getsize(image_path) > self.MAX_FILE_SIZE:
+                return None
+        except Exception:
+            return None
+
         try:
             # Step 1: Safely open the image. This does not decode pixel data yet.
             with PIL.Image.open(image_path) as img:
@@ -59,11 +74,20 @@ class VisionService:
             # Step 3: Re-open the image because .verify() leaves the file pointer at the end.
             img = PIL.Image.open(image_path)
 
+            # V1-B3.3: Dimension enforcement
+            if img.width > self.MAX_WIDTH or img.height > self.MAX_HEIGHT:
+                return None
+            if (img.width * img.height) > self.MAX_PIXELS:
+                return None
+
             # Step 4: Fully decode the pixel data into memory.
             # This ensures we have a valid, fully readable image bitmap.
             img.load()
 
             return img
+        except PIL.Image.DecompressionBombError:
+            # V1-B3.4: Safely reject decompression bombs
+            return None
         except UnidentifiedImageError:
             # The file is not a valid image format
             return None

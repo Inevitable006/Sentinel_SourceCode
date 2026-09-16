@@ -89,3 +89,83 @@ def test_load_image_directory_masquerading():
         assert img is None
     finally:
         os.rmdir(temp_dir)
+# --- size and dimension limits (V1-B3) ---
+
+def test_size_limit_rejected():
+    """Test that a file exceeding MAX_FILE_SIZE is rejected."""
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        # Create a dummy file that is slightly larger than MAX_FILE_SIZE
+        f.write(b'0' * (vision_service.MAX_FILE_SIZE + 1024))
+        temp_path = f.name
+    try:
+        img = vision_service.load_image(temp_path)
+        assert img is None
+    finally:
+        os.remove(temp_path)
+
+def test_dimension_width_rejected():
+    """Test that an image exceeding MAX_WIDTH is rejected."""
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        temp_path = f.name
+    try:
+        img = Image.new('RGB', (vision_service.MAX_WIDTH + 1, 10), color='red')
+        img.save(temp_path, format="PNG")
+        assert vision_service.load_image(temp_path) is None
+    finally:
+        os.remove(temp_path)
+
+def test_dimension_height_rejected():
+    """Test that an image exceeding MAX_HEIGHT is rejected."""
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        temp_path = f.name
+    try:
+        img = Image.new('RGB', (10, vision_service.MAX_HEIGHT + 1), color='red')
+        img.save(temp_path, format="PNG")
+        assert vision_service.load_image(temp_path) is None
+    finally:
+        os.remove(temp_path)
+
+def test_dimension_pixels_rejected():
+    """Test that an image exceeding MAX_PIXELS is rejected."""
+    # Suppose MAX_WIDTH/HEIGHT is 4096 and MAX_PIXELS is 16M.
+    # An image could be 4000x4200 (violates MAX_HEIGHT), but let's assume
+    # we test exactly the pixel limit: 4096 * 4096 is the limit.
+    # We can temporarily mock MAX_PIXELS to test this easily without generating a 16MB image.
+    original_max_pixels = vision_service.MAX_PIXELS
+    vision_service.MAX_PIXELS = 100 * 100
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        temp_path = f.name
+    try:
+        img = Image.new('RGB', (101, 100), color='red')  # 10100 pixels > 10000
+        img.save(temp_path, format="PNG")
+        assert vision_service.load_image(temp_path) is None
+    finally:
+        vision_service.MAX_PIXELS = original_max_pixels
+        os.remove(temp_path)
+
+def test_decompression_bomb_rejected():
+    """Test that Pillow's decompression bomb protection is active and caught."""
+    # We can trigger this by temporarily setting Image.MAX_IMAGE_PIXELS to a small value
+    # and trying to load an image larger than that.
+    import PIL.Image
+    original_limit = PIL.Image.MAX_IMAGE_PIXELS
+    PIL.Image.MAX_IMAGE_PIXELS = 100 * 100
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        temp_path = f.name
+    try:
+        # Create an image that exceeds the bomb limit but passes our naive checks
+        # Actually our naive checks might catch it first if we don't bypass them.
+        # But wait, Image.open() parses the headers and will throw DecompressionBombError
+        # BEFORE our dimension checks run. Let's verify that.
+        img = Image.new('RGB', (200, 200), color='red')
+        # We need to save it while limits are normal so save doesn't crash
+        PIL.Image.MAX_IMAGE_PIXELS = None
+        img.save(temp_path, format="PNG")
+
+        # Now restore the small limit and attempt load
+        PIL.Image.MAX_IMAGE_PIXELS = 100 * 100
+        # Load image should safely return None due to the bomb error
+        assert vision_service.load_image(temp_path) is None
+    finally:
+        PIL.Image.MAX_IMAGE_PIXELS = original_limit
+        os.remove(temp_path)
