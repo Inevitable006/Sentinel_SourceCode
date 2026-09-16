@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from llama_cpp import Llama
 from app.core.paths import MODELS_DIR
 
 class AIService:
@@ -10,6 +9,8 @@ class AIService:
         self.llm = None
         self.active_profile = None
         self.model_path = None
+        self._llama_cls = None
+        self._llama_available = False if os.environ.get("SENTINEL_DISABLE_LLAMA") == "1" else None
         
     @classmethod
     def get_instance(cls):
@@ -35,10 +36,24 @@ class AIService:
             print(f"Warning: Model not found at {self.model_path}. Please download the model first.")
             return False
             
+        if self._llama_available is None:
+            if os.environ.get("SENTINEL_DISABLE_LLAMA") == "1":
+                print("[AI Service] llama_cpp disabled by SENTINEL_DISABLE_LLAMA=1")
+                self._llama_available = False
+            else:
+                try:
+                    from llama_cpp import Llama
+                    self._llama_cls = Llama
+                    self._llama_available = True
+                except (OSError, RuntimeError, ImportError) as e:
+                    print(f"[AI Service] llama_cpp unavailable: {e}")
+                    self._llama_available = False
+                    
+        if not self._llama_available:
+            return False
+            
         try:
             print(f"Loading model into RAM: {self.model_path} with profile {profile['name']}")
-            
-            import llama_cpp
             
             # Check for GPU support
             gpu_layers = profile.get("n_gpu_layers", 20)
@@ -46,7 +61,7 @@ class AIService:
 
 
             try:
-                self.llm = Llama(
+                self.llm = self._llama_cls(
                     model_path=str(self.model_path),
                     n_ctx=profile.get("n_ctx", 2048),
                     n_threads=profile.get("n_threads", 4),
@@ -56,7 +71,7 @@ class AIService:
             except Exception as e:
                 if gpu_layers > 0:
                     print(f"GPU Model load failed ({e}). Attempting CPU fallback...")
-                    self.llm = Llama(
+                    self.llm = self._llama_cls(
                         model_path=str(self.model_path),
                         n_ctx=profile.get("n_ctx", 2048),
                         n_threads=profile.get("n_threads", 4),

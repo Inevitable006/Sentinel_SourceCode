@@ -18,7 +18,7 @@ app = FastAPI(title=settings.app_name, version=settings.version)
 # Allow CORS for the React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "file://"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,15 +105,11 @@ def confirm_tool_execution(confirmation: ToolConfirmation, session_token: str = 
 
 @app.get("/health")
 def health_check():
-    engine_status = "UNLOADED"
+    engine_status = "UNAVAILABLE" if getattr(ai_service, "_llama_available", None) is False else "UNLOADED"
     if ai_service.llm is not None:
-        if getattr(ai_service.llm, "n_gpu_layers", 0) > 0:
-            engine_status = "GPU"
-        else:
-            engine_status = "CPU (Fallback)"
-            
+        engine_status = "GPU" if getattr(ai_service.llm, "n_gpu_layers", 0) > 0 else "CPU"
     return {
-        "status": "ok", 
+        "status": "ok",
         "app": settings.app_name,
         "model_loaded": ai_service.llm is not None,
         "engine_status": engine_status
