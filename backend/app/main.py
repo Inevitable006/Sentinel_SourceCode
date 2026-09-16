@@ -9,6 +9,7 @@ from app.core.ai_service import ai_service
 from app.db.database import engine, Base, SessionLocal
 from app.core.memory_service import memory_service
 from app.core.resource_governor import resource_governor
+from app.core.vision_service import vision_service
 
 # Ensure data directories exist
 ensure_paths()
@@ -298,9 +299,13 @@ async def chat_endpoint(websocket: WebSocket):
             # Save user message to memory
             memory_service.add_message(db, thread_id, "user", user_message)
 
-            # Phase V1-A: Acknowledge image ingestion
+            # Phase V1-A & V1-B1: Secure image ingestion
             if image_path:
-                memory_service.add_message(db, thread_id, "system", f"[User attached an image: {image_path}. Note: Vision analysis is pending Phase V1-D.]")
+                if vision_service.validate_image_path(image_path):
+                    memory_service.add_message(db, thread_id, "system", f"[User attached an image: {image_path}. Note: Vision analysis is pending Phase V1-D.]")
+                else:
+                    memory_service.add_message(db, thread_id, "system", f"[System Error: The provided image path is invalid, unauthorized, or contains path traversal attempts. Path rejected.]")
+                    image_path = None
 
             # Get history
             history = memory_service.get_context_history(db, thread_id, limit=6) # Last 6 messages
