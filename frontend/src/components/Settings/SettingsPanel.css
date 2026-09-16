@@ -87,3 +87,45 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* New Elements */
+.settings-dropdown {
+  width: 100%;
+  padding: 0.75rem;
+  background: rgba(11, 15, 25, 0.8);
+  border: 1px solid rgba(0, 255, 204, 0.2);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-dropdown:focus {
+  border-color: var(--accent-primary);
+}
+
+.settings-dropdown option {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.toggle-label {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}

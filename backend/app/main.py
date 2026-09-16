@@ -24,6 +24,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Global lock for model loading to prevent concurrency corruption
+model_load_lock = asyncio.Lock()
+
 @app.on_event("startup")
 async def startup_event():
     # Create DB tables
@@ -53,7 +56,7 @@ def update_governor_mode(update: GovernorModeUpdate):
 from app.core.model_registry import model_registry
 
 @app.get("/api/models")
-def get_models():
+def get_models(session_token: str = Depends(verify_session_token)):
     return {
         "active_profile": model_registry.get_active_profile(),
         "profiles": model_registry.get_all_profiles()
@@ -63,7 +66,7 @@ class ModelSelection(BaseModel):
     profile_id: str
 
 @app.post("/api/models/select")
-def select_model(selection: ModelSelection):
+def select_model(selection: ModelSelection, session_token: str = Depends(verify_session_token)):
     if model_registry.set_active_profile(selection.profile_id):
         # Unload current model so the next chat request loads the new one
         from app.core.ai_service import ai_service
@@ -72,7 +75,7 @@ def select_model(selection: ModelSelection):
     return {"status": "error", "message": "Invalid profile ID"}
 
 @app.post("/api/models/unload")
-def unload_model():
+def unload_model(session_token: str = Depends(verify_session_token)):
     from app.core.ai_service import ai_service
     ai_service.unload_model()
     return {"status": "success"}
@@ -93,12 +96,18 @@ async def load_local_model(session_token: str = Depends(verify_session_token)):
         raise HTTPException(status_code=503, detail="Cannot load AI model. Sentinel is currently in a restricted mode.")
 
     from app.core.ai_service import ai_service
-    loop = asyncio.get_event_loop()
-    success = await loop.run_in_executor(None, ai_service.load_model)
-    if success:
-        return {"status": "success", "message": "Model loaded successfully."}
-    else:
-        raise HTTPException(status_code=503, detail="Service Unavailable: Failed to load local model (disabled, blocked, or unavailable).")
+    
+    # Secure concurrency: prevent double-clicks from corrupting memory
+    if model_load_lock.locked():
+        raise HTTPException(status_code=503, detail="Model load already in progress.")
+        
+    async with model_load_lock:
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(None, ai_service.load_model)
+        if success:
+            return {"status": "success", "message": "Model loaded successfully."}
+        else:
+            raise HTTPException(status_code=503, detail="Service Unavailable: Failed to load local model (disabled, blocked, or unavailable).")
 
 class ToolConfirmation(BaseModel):
     token: str
@@ -137,7 +146,7 @@ class SettingsUpdate(BaseModel):
     system_prompt: str
 
 @app.get("/settings")
-def get_settings():
+def get_settings(session_token: str = Depends(verify_session_token)):
     db = SessionLocal()
     try:
         setting = db.query(AppSettings).first()
@@ -151,7 +160,7 @@ def get_settings():
         db.close()
 
 @app.post("/settings")
-def update_settings(update: SettingsUpdate):
+def update_settings(update: SettingsUpdate, session_token: str = Depends(verify_session_token)):
     db = SessionLocal()
     try:
         setting = db.query(AppSettings).first()
@@ -165,12 +174,12 @@ def update_settings(update: SettingsUpdate):
         db.close()
 
 @app.get("/api/research/history")
-def get_research_history():
+def get_research_history(session_token: str = Depends(verify_session_token)):
     from app.core.research_service import research_service
     return {"history": research_service.get_history()}
 
 @app.post("/api/research/clear")
-def clear_research_history():
+def clear_research_history(session_token: str = Depends(verify_session_token)):
     from app.core.research_service import research_service
     research_service.clear_history()
     return {"status": "success"}
@@ -179,7 +188,7 @@ class LocalModeUpdate(BaseModel):
     local_only: bool
 
 @app.post("/api/research/mode")
-def set_research_mode(update: LocalModeUpdate):
+def set_research_mode(update: LocalModeUpdate, session_token: str = Depends(verify_session_token)):
     from app.core.research_service import research_service
     research_service.set_local_mode(update.local_only)
     return {"status": "success", "local_only": update.local_only}
