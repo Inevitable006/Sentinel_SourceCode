@@ -57,3 +57,4 @@ backend/llama-bin.zip
 backend/llama-bin/*.dll
 backend/llama-bin/*.exe
 backend/models/*.gguf
+electron.err

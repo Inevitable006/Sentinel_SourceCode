@@ -110,9 +110,13 @@ async function bootSentinel() {
   global.SENTINEL_SESSION_TOKEN = crypto.randomBytes(32).toString('hex');
   logger.info('system', 'Generated ephemeral session token for backend authentication');
 
+  global.SENTINEL_BACKEND_PORT = process.env.SENTINEL_BACKEND_PORT || 8000;
+  process.env.SENTINEL_BACKEND_PORT = global.SENTINEL_BACKEND_PORT;
+
   // Point to the virtual environment python executable
-  const pythonCmd = path.join(__dirname, '../../backend/.venv/Scripts/python.exe');
-  const serverScript = path.join(__dirname, '../../backend/run_server.py');
+  const backendRoot = app.isPackaged ? path.join(process.resourcesPath, 'backend') : path.join(__dirname, '../../backend');
+  const pythonCmd = path.join(backendRoot, '.venv/Scripts/python.exe');
+  const serverScript = path.join(backendRoot, 'run_server.py');
 
   let aiProcess = null;
   let retryCount = 0;
@@ -122,7 +126,11 @@ async function bootSentinel() {
     try {
       logger.info('system', `Spawning Python backend (Attempt ${retryCount + 1}/${MAX_RETRIES + 1})...`);
 
-      const backendEnv = { ...process.env, SENTINEL_SESSION_TOKEN: global.SENTINEL_SESSION_TOKEN };
+      const backendEnv = { 
+        ...process.env, 
+        SENTINEL_SESSION_TOKEN: global.SENTINEL_SESSION_TOKEN,
+        SENTINEL_BACKEND_PORT: global.SENTINEL_BACKEND_PORT
+      };
 
       aiProcess = spawn(pythonCmd, [serverScript], {
         cwd: path.join(__dirname, '../../'),
@@ -285,6 +293,7 @@ function createTray() {
 
 // ─── IPC Handlers: Authentication ────────────────────────────────
 ipcMain.handle('auth-get-session-token', () => global.SENTINEL_SESSION_TOKEN);
+ipcMain.handle('auth-get-backend-port', () => global.SENTINEL_BACKEND_PORT);
 
 // ─── IPC Handlers: Window Controls ──────────────────────────────
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
@@ -510,7 +519,7 @@ app.whenReady().then(() => {
 
   // 2. Register for startup
   app.setLoginItemSettings({
-    openAtLogin: true,
+    openAtLogin: false,
     openAsHidden: true,
     path: app.getPath('exe')
   });

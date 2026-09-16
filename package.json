@@ -30,6 +30,36 @@
       "frontend/dist/**/*",
       "assets/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!llama-bin.zip",
+          "!llama-bin/*.dll",
+          "!llama-bin/*.exe",
+          "!models/**",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/.pytest_cache/**",
+          "!**/.mypy_cache/**",
+          "!.env",
+          "!.env.*",
+          "!.git/**",
+          "!tests/**",
+          "!scripts/**",
+          "!jarvis_desktop.py",
+          "!**/*.db",
+          "!**/*.sqlite",
+          "!**/*.sqlite3",
+          "!**/*.log",
+          "!**/audit.log",
+          "!**/research_history.json",
+          "!**/models.json"
+        ]
+      }
     ]
   },
   "author": "SENTINEL Project",
