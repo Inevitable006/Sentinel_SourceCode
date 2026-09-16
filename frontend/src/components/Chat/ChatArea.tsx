@@ -23,7 +23,9 @@ const ChatArea: React.FC = () => {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [modelLoadState, setModelLoadState] = useState<'unloaded'|'loading'|'loaded'|'failed'>('unloaded');
   const [loadErrorMsg, setLoadErrorMsg] = useState('');
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const handleLoadModel = async () => {
@@ -32,7 +34,7 @@ const ChatArea: React.FC = () => {
     try {
       let port = 8000;
       let token = "dev_fallback_token";
-      
+
       // @ts-ignore
       if (window.sentinel?.auth) {
         // @ts-ignore
@@ -47,7 +49,7 @@ const ChatArea: React.FC = () => {
           'X-Sentinel-Session': token
         }
       });
-      
+
       if (response.ok) {
         setModelLoadState('loaded');
       } else {
@@ -64,11 +66,11 @@ const ChatArea: React.FC = () => {
   // Initialize WebSocket connection
   useEffect(() => {
     let ws: WebSocket;
-    
+
     const initWebSocket = async () => {
       let port = 8000;
       let token = "dev_fallback_token";
-      
+
       // @ts-ignore
       if (window.sentinel?.auth) {
         // @ts-ignore
@@ -76,7 +78,7 @@ const ChatArea: React.FC = () => {
         // @ts-ignore
         token = await window.sentinel.auth.getSessionToken();
       }
-      
+
       ws = new WebSocket(`ws://127.0.0.1:${port}/ws/chat?token=${token}`);
 
       ws.onopen = () => setIsConnected(true);
@@ -96,7 +98,7 @@ const ChatArea: React.FC = () => {
       ws.onclose = () => setIsConnected(false);
       wsRef.current = ws;
     };
-    
+
     initWebSocket();
 
     return () => {
@@ -124,10 +126,19 @@ const ChatArea: React.FC = () => {
 
     // Send to backend
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
+      const payload: any = {
         text: input,
         voice_enabled: voiceEnabled
-      }));
+      };
+
+      if (selectedImage) {
+        // We rely on Electron IPC to send absolute paths.
+        // In this architecture, File.path gives the absolute path.
+        // @ts-ignore
+        payload.image_path = selectedImage.path || "";
+      }
+
+      wsRef.current.send(JSON.stringify(payload));
     } else {
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
@@ -138,6 +149,13 @@ const ChatArea: React.FC = () => {
     }
 
     setInput('');
+    setSelectedImage(null);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedImage(e.target.files[0]);
+    }
   };
 
   return (
@@ -188,8 +206,21 @@ const ChatArea: React.FC = () => {
       </div>
 
       <div className="input-area">
+        {selectedImage && (
+          <div className="image-preview" style={{ padding: '8px', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Selected Image: {selectedImage.name}</span>
+            <button type="button" onClick={() => setSelectedImage(null)} style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.8rem' }}>Remove</button>
+          </div>
+        )}
         <form onSubmit={handleSend} className="input-form">
-          <button type="button" className="action-btn" title="Attach file">
+          <input
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            ref={fileInputRef}
+            onChange={handleFileChange}
+          />
+          <button type="button" className="action-btn" title="Attach Image" onClick={() => fileInputRef.current?.click()}>
             <Paperclip size={20} />
           </button>
           <input
@@ -199,7 +230,7 @@ const ChatArea: React.FC = () => {
             placeholder="Message Sentinel..."
             className="text-input"
           />
-          <button type="submit" className="submit-btn" disabled={!input.trim()}>
+          <button type="submit" className="submit-btn" disabled={!input.trim() && !selectedImage}>
             <Send size={18} />
           </button>
         </form>

@@ -55,6 +55,15 @@ def update_governor_mode(update: GovernorModeUpdate):
 
 from app.core.model_registry import model_registry
 
+def verify_session_token(x_sentinel_session: str = Header(...)):
+    expected_token = os.environ.get("SENTINEL_SESSION_TOKEN")
+    if not expected_token:
+        # If env is not set (e.g. dev mode without Electron), we could allow it, but for security we reject.
+        raise HTTPException(status_code=500, detail="Backend session token not configured.")
+    if x_sentinel_session != expected_token:
+        raise HTTPException(status_code=401, detail="Invalid session token.")
+    return x_sentinel_session
+
 @app.get("/api/models")
 def get_models(session_token: str = Depends(verify_session_token)):
     return {
@@ -80,14 +89,6 @@ def unload_model(session_token: str = Depends(verify_session_token)):
     ai_service.unload_model()
     return {"status": "success"}
 
-def verify_session_token(x_sentinel_session: str = Header(...)):
-    expected_token = os.environ.get("SENTINEL_SESSION_TOKEN")
-    if not expected_token:
-        # If env is not set (e.g. dev mode without Electron), we could allow it, but for security we reject.
-        raise HTTPException(status_code=500, detail="Backend session token not configured.")
-    if x_sentinel_session != expected_token:
-        raise HTTPException(status_code=401, detail="Invalid session token.")
-    return x_sentinel_session
 
 @app.post("/api/models/load")
 async def load_local_model(session_token: str = Depends(verify_session_token)):
@@ -96,11 +97,11 @@ async def load_local_model(session_token: str = Depends(verify_session_token)):
         raise HTTPException(status_code=503, detail="Cannot load AI model. Sentinel is currently in a restricted mode.")
 
     from app.core.ai_service import ai_service
-    
+
     # Secure concurrency: prevent double-clicks from corrupting memory
     if model_load_lock.locked():
         raise HTTPException(status_code=503, detail="Model load already in progress.")
-        
+
     async with model_load_lock:
         loop = asyncio.get_event_loop()
         success = await loop.run_in_executor(None, ai_service.load_model)
@@ -267,6 +268,7 @@ async def chat_endpoint(websocket: WebSocket):
                 user_message = data.get("text", "")
                 voice_enabled = data.get("voice_enabled", False)
                 active_request_id = data.get("request_id", str(uuid.uuid4()))
+                image_path = data.get("image_path")
             except Exception:
                 # Fallback for raw text
                 if is_processing:
@@ -274,6 +276,7 @@ async def chat_endpoint(websocket: WebSocket):
                 user_message = raw_message
                 voice_enabled = False
                 active_request_id = str(uuid.uuid4())
+                image_path = None
 
             is_processing = True
 
@@ -294,6 +297,10 @@ async def chat_endpoint(websocket: WebSocket):
 
             # Save user message to memory
             memory_service.add_message(db, thread_id, "user", user_message)
+
+            # Phase V1-A: Acknowledge image ingestion
+            if image_path:
+                memory_service.add_message(db, thread_id, "system", f"[User attached an image: {image_path}. Note: Vision analysis is pending Phase V1-D.]")
 
             # Get history
             history = memory_service.get_context_history(db, thread_id, limit=6) # Last 6 messages
