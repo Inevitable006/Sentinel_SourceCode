@@ -1,7 +1,9 @@
 import os
 import pathlib
+from typing import Dict, Any
 import PIL.Image
 from PIL import UnidentifiedImageError
+from app.core.vision_adapter import LocalVisionAdapter
 
 class VisionService:
     # V1-B3: Hard resource limits
@@ -14,6 +16,7 @@ class VisionService:
         self.allowed_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
         # Enforce Pillow's native decompression bomb limit
         PIL.Image.MAX_IMAGE_PIXELS = self.MAX_PIXELS
+        self.adapter = LocalVisionAdapter()
 
     def validate_image_path(self, image_path: str) -> bool:
         """
@@ -94,5 +97,39 @@ class VisionService:
         except Exception:
             # Catch IOErrors, permission denied, missing files, or corrupted bitmap data
             return None
+
+    def analyze_image(self, image_path: str, prompt: str) -> Dict[str, Any]:
+        """
+        V1-B4: Safely loads the image and forwards it to the vision adapter.
+        Guarantees that B1-B3 validations are performed before adapter invocation.
+        Returns a structured dictionary with the result.
+        """
+        # Step 1: B1-B3 Secure Loading
+        img = self.load_image(image_path)
+        if img is None:
+            return {
+                "ok": False,
+                "error": "INVALID_IMAGE",
+                "content": None
+            }
+
+        # Step 2: V1-B4 Adapter Boundary
+        # The adapter itself checks for availability, but we enforce the contract here.
+        if not self.adapter.is_available():
+            # Clean up the loaded image before returning
+            img.close()
+            return {
+                "ok": False,
+                "error": "VISION_MODEL_UNAVAILABLE",
+                "content": None
+            }
+
+        # Step 3: Forward to adapter (returns a structured dict)
+        try:
+            result = self.adapter.analyze(img, prompt)
+            return result
+        finally:
+            # Always close the image after analysis
+            img.close()
 
 vision_service = VisionService()

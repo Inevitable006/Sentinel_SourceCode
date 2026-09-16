@@ -169,3 +169,34 @@ def test_decompression_bomb_rejected():
     finally:
         PIL.Image.MAX_IMAGE_PIXELS = original_limit
         os.remove(temp_path)
+# --- analyze_image routing (V1-B4) ---
+
+def test_analyze_image_invalid_image():
+    """
+    Test that analyze_image rejects invalid images (B1-B3 limits)
+    before even hitting the adapter availability check.
+    """
+    # Create an invalid file
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+        temp_path = f.name
+    try:
+        result = vision_service.analyze_image(temp_path, "Describe this")
+        assert result["ok"] is False
+        assert result["error"] == "INVALID_IMAGE"
+    finally:
+        os.remove(temp_path)
+
+def test_analyze_image_valid_but_model_unavailable():
+    """
+    Test that passing a perfectly valid image through B1-B3 reaches the B4 adapter,
+    and returns VISION_MODEL_UNAVAILABLE because the stub is offline.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        temp_path = f.name
+    try:
+        create_dummy_image(temp_path, "PNG")
+        result = vision_service.analyze_image(temp_path, "Describe this")
+        assert result["ok"] is False
+        assert result["error"] == "VISION_MODEL_UNAVAILABLE"
+    finally:
+        os.remove(temp_path)
