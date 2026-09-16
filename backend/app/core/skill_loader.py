@@ -158,6 +158,31 @@ def register_all_skills():
         "skill_fetch_url": "fetch_url",
     })
 
+    # ── Python Coding ────────────────────────────────────────
+    skill_router.register_skill(SkillManifest(
+        name="python_coding",
+        version="1.0.0",
+        description="Executes Python code locally in a sandboxed, time-bounded process.",
+        risk_tier=RiskTier.TIER_3,
+        required_capabilities=[SkillCapability.PROCESS_EXEC],
+        tools=[
+            SkillToolSchema(
+                name="skill_execute_python_code",
+                description="Executes a Python script locally and returns the stdout/stderr. Used for math, data analysis, and scripting.",
+                parameters={"code": {"type": "string"}},
+                required_capabilities=["process_exec"]
+            ),
+        ],
+        entry_point="skills.python_coding",
+        lazy_load=True,
+        gpu_policy=GpuPolicy.FORBIDDEN,
+        requires_confirmation=True,
+    ))
+    
+    _register_function_aliases("python_coding", {
+        "skill_execute_python_code": "execute_python_code",
+    })
+
     print(f"[SkillLoader] Registered {len(skill_router.get_all_manifests())} skills.")
 
 
