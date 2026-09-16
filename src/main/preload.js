@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('sentinel', {
 
   // ── Authentication ──
   auth: {
-    getSessionToken: () => ipcRenderer.invoke('auth-get-session-token')
+    getSessionToken: () => ipcRenderer.invoke('auth-get-session-token'),
+    getBackendPort: () => ipcRenderer.invoke('auth-get-backend-port')
   }
 });

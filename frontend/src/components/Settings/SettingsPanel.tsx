@@ -7,22 +7,40 @@ const SettingsPanel: React.FC = () => {
   const [status, setStatus] = useState('');
 
   useEffect(() => {
-    fetch('http://localhost:8000/settings')
-      .then(res => res.json())
-      .then(data => {
-        setSystemPrompt(data.system_prompt);
-      })
-      .catch(err => {
-        console.error(err);
-        setSystemPrompt('Error loading settings.');
-      });
+    const fetchSettings = async () => {
+      let port = 8000;
+      // @ts-ignore
+      if (window.sentinel?.auth) {
+        // @ts-ignore
+        port = await window.sentinel.auth.getBackendPort();
+      }
+      
+      fetch(`http://127.0.0.1:${port}/settings`)
+        .then(res => res.json())
+        .then(data => {
+          setSystemPrompt(data.system_prompt);
+        })
+        .catch(err => {
+          console.error(err);
+          setSystemPrompt('Error loading settings.');
+        });
+    };
+    
+    fetchSettings();
   }, []);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true);
     setStatus('');
     
-    fetch('http://localhost:8000/settings', {
+    let port = 8000;
+    // @ts-ignore
+    if (window.sentinel?.auth) {
+      // @ts-ignore
+      port = await window.sentinel.auth.getBackendPort();
+    }
+    
+    fetch(`http://127.0.0.1:${port}/settings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

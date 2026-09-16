@@ -26,26 +26,45 @@ const ChatArea: React.FC = () => {
 
   // Initialize WebSocket connection
   useEffect(() => {
-    const ws = new WebSocket('ws://127.0.0.1:8000/ws/chat');
-
-    ws.onopen = () => setIsConnected(true);
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'reply') {
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          sender: 'sentinel',
-          text: data.message,
-          timestamp: new Date()
-        }]);
+    let ws: WebSocket;
+    
+    const initWebSocket = async () => {
+      let port = 8000;
+      let token = "dev_fallback_token";
+      
+      // @ts-ignore
+      if (window.sentinel?.auth) {
+        // @ts-ignore
+        port = await window.sentinel.auth.getBackendPort();
+        // @ts-ignore
+        token = await window.sentinel.auth.getSessionToken();
       }
+      
+      ws = new WebSocket(`ws://127.0.0.1:${port}/ws/chat?token=${token}`);
+
+      ws.onopen = () => setIsConnected(true);
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'reply') {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            sender: 'sentinel',
+            text: data.message,
+            timestamp: new Date()
+          }]);
+        }
+      };
+
+      ws.onclose = () => setIsConnected(false);
+      wsRef.current = ws;
     };
+    
+    initWebSocket();
 
-    ws.onclose = () => setIsConnected(false);
-    wsRef.current = ws;
-
-    return () => ws.close();
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+    };
   }, []);
 
   // Auto-scroll to bottom
