@@ -26,6 +26,38 @@ def check(name, condition):
         print(f"  FAIL: {name}")
         failed += 1
 
+import ast
+
+def _get_main_py_ast():
+    """Parse app/main.py into an AST without importing it (avoids llama_cpp DLL load)."""
+    main_py = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "app", "main.py"
+    )
+    with open(main_py, "r", encoding="utf-8") as f:
+        source = f.read()
+    tree = ast.parse(source, filename="app/main.py")
+    return tree, source
+
+def _get_function_source(tree, source, func_name):
+    """Extract the exact source lines of a specific function from the AST."""
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+            lines = source.splitlines()
+            # node.lineno is 1-indexed, node.end_lineno is inclusive
+            return "\n".join(lines[node.lineno - 1 : node.end_lineno])
+    raise ValueError(f"Function '{func_name}' not found in AST")
+
+def _get_module_constant(tree, name):
+    """Extract a module-level constant assignment value from the AST."""
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    if isinstance(node.value, ast.Constant):
+                        return node.value.value
+    return None
+
 # ============================================================
 # INVARIANT 1: run_system_op is TIER_3 and requires confirmation
 # ============================================================
@@ -98,9 +130,8 @@ def test_invariant_3():
     # and increments chain_depth each iteration including malformed calls.
     # Direct test requires a WebSocket which is tested in integration.
     # Here we verify the constant exists in main.py source.
-    import inspect
-    from app import main
-    source = inspect.getsource(main.chat_endpoint)
+    tree, src = _get_main_py_ast()
+    source = _get_function_source(tree, src, "chat_endpoint")
     check("MAX_CHAIN_DEPTH = 5 is in the WebSocket handler", "MAX_CHAIN_DEPTH = 5" in source)
     check("chain_depth incremented each iteration", "chain_depth += 1" in source)
 
@@ -165,9 +196,8 @@ def test_invariant_6():
 # ============================================================
 def test_invariant_7():
     print("\n[Invariant 7] Cancellation mechanism exists")
-    import inspect
-    from app import main
-    source = inspect.getsource(main.chat_endpoint)
+    tree, src = _get_main_py_ast()
+    source = _get_function_source(tree, src, "chat_endpoint")
     check("cancel_event created per connection", "cancel_event = asyncio.Event()" in source)
     check("Cancel type message handled", 'data.get(\"type\") == \"cancel\"' in source or "cancel" in source)
     check("cancel_event.is_set() checked in chain loop", "cancel_event.is_set()" in source)
@@ -239,9 +269,8 @@ def test_invariant_9():
 # ============================================================
 def test_invariant_10():
     print("\n[Invariant 10] Untrusted data cannot authorize actions")
-    import inspect
-    from app import main
-    source = inspect.getsource(main.chat_endpoint)
+    tree, src = _get_main_py_ast()
+    source = _get_function_source(tree, src, "chat_endpoint")
     check("Memory tagged UNTRUSTED in system prompt", "UNTRUSTED DATA" in source)
     check("Memory wrapped in <user_memory> tags", "<user_memory>" in source)
     # The architecture ensures that memory enters LLM context as data.
@@ -410,9 +439,8 @@ def test_invariant_17():
     print("\n[Invariant 17] Cancellation Authorization Isolation")
     # This verifies that main.py relies on the websocket's internal active_request_id
     # rather than taking an arbitrary job_id from the user's cancel message.
-    import inspect
-    from app import main
-    source = inspect.getsource(main.chat_endpoint)
+    tree, src = _get_main_py_ast()
+    source = _get_function_source(tree, src, "chat_endpoint")
     
     # Check that cancel logic uses the locally stored active_request_id, NOT data.get("request_id")
     check("Cancellation uses internal active_request_id", "safe_process.cancel_job(active_request_id)" in source)
@@ -425,16 +453,20 @@ def test_invariant_13():
     print("\n[Invariant 13] Phase 7/8 regression compatibility")
     # Run existing test suites
     import subprocess
+    import sys
+    
+    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    python_exe = sys.executable or os.path.join(backend_root, ".venv", "Scripts", "python.exe")
     
     r1 = subprocess.run(
-        [".venv/Scripts/python.exe", "tests/security/test_policy.py"],
-        capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        [python_exe, "tests/security/test_policy.py"],
+        capture_output=True, text=True, cwd=backend_root
     )
     check("test_policy.py passes", r1.returncode == 0 and "All Policy Engine tests passed" in r1.stdout)
     
     r2 = subprocess.run(
-        [".venv/Scripts/python.exe", "tests/integration/test_phase8.py"],
-        capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        [python_exe, "tests/integration/test_phase8.py"],
+        capture_output=True, text=True, cwd=backend_root
     )
     check("test_phase8.py passes", "PHASE 8" in r2.stdout)
 
@@ -518,9 +550,8 @@ def test_invariant_18():
 # ============================================================
 def test_invariant_19():
     print("\n[Invariant 19] Concurrent request rejection (one-active-request)")
-    import inspect
-    from app import main
-    source = inspect.getsource(main.chat_endpoint)
+    tree, src = _get_main_py_ast()
+    source = _get_function_source(tree, src, "chat_endpoint")
     
     # 19a: is_processing flag exists
     check("is_processing guard flag exists", "is_processing = False" in source)
@@ -577,10 +608,69 @@ def test_invariant_20():
           "10240" in search_web_source)
     
     # 20g: WebSocket handler wraps ALL tool results in <untrusted_content>
-    from app import main
-    ws_source = inspect.getsource(main.chat_endpoint)
+    tree, src = _get_main_py_ast()
+    ws_source = _get_function_source(tree, src, "chat_endpoint")
     check("WebSocket handler wraps tool results in <untrusted_content> tags",
           "<untrusted_content>" in ws_source)
+
+# ============================================================
+# DEGRADED MODE TEST
+# ============================================================
+def test_degraded_mode():
+    print("\n[Degraded Mode] Backend serves health/tools when llama_cpp is unavailable")
+    import subprocess
+    import socket
+    import urllib.request
+    import psutil
+    
+    # Select a unique ephemeral port
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        test_port = s.getsockname()[1]
+        
+    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    python_exe = os.path.join(backend_root, ".venv", "Scripts", "python.exe")
+    if not os.path.exists(python_exe):
+        python_exe = "python"
+        
+    env = {**os.environ, "SENTINEL_DISABLE_LLAMA": "1", "SENTINEL_BACKEND_PORT": str(test_port)}
+    
+    proc = subprocess.Popen(
+        [python_exe, "run_server.py"],
+        cwd=backend_root, env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    child_pid = proc.pid
+    
+    try:
+        deadline = time.monotonic() + 15
+        ready = False
+        data = None
+        while time.monotonic() < deadline:
+            try:
+                resp = urllib.request.urlopen(f"http://127.0.0.1:{test_port}/health", timeout=1)
+                data = json.loads(resp.read())
+                ready = True
+                break
+            except Exception:
+                time.sleep(0.5)
+                
+        check("Backend started within 15s in degraded mode", ready)
+        if data:
+            check("Health endpoint responds in degraded mode", data.get("status") == "ok")
+            check("Model correctly shows unloaded", data.get("model_loaded") is False)
+            check("Engine status is UNAVAILABLE", data.get("engine_status") == "UNAVAILABLE")
+    finally:
+        try:
+            parent = psutil.Process(child_pid)
+            for child in parent.children(recursive=True):
+                child.kill()
+            parent.kill()
+            parent.wait(timeout=5)
+        except Exception:
+            proc.kill()
+            proc.wait(timeout=5)
+
 
 # ============================================================
 # RUN ALL
@@ -610,6 +700,7 @@ if __name__ == "__main__":
     test_invariant_18()
     test_invariant_19()
     test_invariant_20()
+    test_degraded_mode()
     
     print("\n" + "=" * 60)
     print(f"RESULTS: {passed} passed, {failed} failed, {passed + failed} total")
