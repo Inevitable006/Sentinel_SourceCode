@@ -208,6 +208,31 @@ def register_all_skills():
         "skill_read_document": "read_document",
     })
 
+    # ── Finance Analysis ─────────────────────────────────────
+    skill_router.register_skill(SkillManifest(
+        name="finance_analysis",
+        version="1.0.0",
+        description="Fetches read-only market data for analysis. Autonomous trading is strictly prohibited.",
+        risk_tier=RiskTier.TIER_2,
+        required_capabilities=[SkillCapability.NETWORK_ACCESS],
+        tools=[
+            SkillToolSchema(
+                name="skill_get_market_data",
+                description="Fetches real-time or historical stock/crypto price data for a given symbol.",
+                parameters={"symbol": {"type": "string"}},
+                required_capabilities=["network_access"]
+            ),
+        ],
+        entry_point="skills.finance_analysis",
+        lazy_load=True,
+        gpu_policy=GpuPolicy.FORBIDDEN,
+        requires_confirmation=True,
+    ))
+    
+    _register_function_aliases("finance_analysis", {
+        "skill_get_market_data": "get_market_data",
+    })
+
     print(f"[SkillLoader] Registered {len(skill_router.get_all_manifests())} skills.")
 
 
