@@ -18,6 +18,8 @@ try:
 except (ImportError, RuntimeError):
     # RuntimeError catches "[WinError 4551] An Application Control policy has blocked this file" for DLLs
     LLAMA_CPP_AVAILABLE = False
+    Llama = None
+    Llava15ChatHandler = None
 
 class VisionModelAdapter(ABC):
     """
