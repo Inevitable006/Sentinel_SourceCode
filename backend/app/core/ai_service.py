@@ -12,6 +12,9 @@ class AIService:
         self._llama_cls = None
         self._llama_available = False if os.environ.get("SENTINEL_DISABLE_LLAMA") == "1" else None
         
+        import threading
+        self.lock = threading.Lock()
+        
     @classmethod
     def get_instance(cls):
         if cls._instance is None:
@@ -20,72 +23,73 @@ class AIService:
         
     def load_model(self):
         """Loads the model into memory. Call this during app startup."""
-        if self.llm is not None:
-            return True
+        with self.lock:
+            if self.llm is not None:
+                return True
             
-        from app.core.model_registry import model_registry
-        profile = model_registry.get_active_profile()
-        if not profile:
-            print("Error: No active model profile configured.")
-            return False
+            from app.core.model_registry import model_registry
+            profile = model_registry.get_active_profile()
+            if not profile:
+                print("Error: No active model profile configured.")
+                return False
+                
+            self.active_profile = profile
+            self.model_path = model_registry.get_model_path(profile["filename"])
             
-        self.active_profile = profile
-        self.model_path = model_registry.get_model_path(profile["filename"])
+            if not self.model_path.exists():
+                print(f"Warning: Model not found at {self.model_path}. Please download the model first.")
+                return False
             
-        if not self.model_path.exists():
-            print(f"Warning: Model not found at {self.model_path}. Please download the model first.")
-            return False
-            
-        if self._llama_available is None:
-            if os.environ.get("SENTINEL_DISABLE_LLAMA") == "1":
-                print("[AI Service] llama_cpp disabled by SENTINEL_DISABLE_LLAMA=1")
-                self._llama_available = False
-            else:
-                try:
-                    from llama_cpp import Llama
-                    self._llama_cls = Llama
-                    self._llama_available = True
-                except (OSError, RuntimeError, ImportError) as e:
-                    print(f"[AI Service] llama_cpp unavailable: {e}")
+            if self._llama_available is None:
+                if os.environ.get("SENTINEL_DISABLE_LLAMA") == "1":
+                    print("[AI Service] llama_cpp disabled by SENTINEL_DISABLE_LLAMA=1")
                     self._llama_available = False
+                else:
+                    try:
+                        from llama_cpp import Llama
+                        self._llama_cls = Llama
+                        self._llama_available = True
+                    except (OSError, RuntimeError, ImportError) as e:
+                        print(f"[AI Service] llama_cpp unavailable: {e}")
+                        self._llama_available = False
                     
-        if not self._llama_available:
-            return False
+            if not self._llama_available:
+                return False
             
-        try:
-            print(f"Loading model into RAM: {self.model_path} with profile {profile['name']}")
-            
-            # Check for GPU support
-            gpu_layers = profile.get("n_gpu_layers", 20)
-            supports_gpu = True  # Bypassing wrapper check since CUDA DLLs are manually linked
-
-
             try:
-                self.llm = self._llama_cls(
-                    model_path=str(self.model_path),
-                    n_ctx=profile.get("n_ctx", 2048),
-                    n_threads=profile.get("n_threads", 4),
-                    n_gpu_layers=gpu_layers,
-                    verbose=False
-                )
-            except Exception as e:
-                if gpu_layers > 0:
-                    print(f"GPU Model load failed ({e}). Attempting CPU fallback...")
+                print(f"Loading model into RAM: {self.model_path} with profile {profile['name']}")
+                
+                # Check for GPU support
+                gpu_layers = profile.get("n_gpu_layers", 20)
+                supports_gpu = True  # Bypassing wrapper check since CUDA DLLs are manually linked
+
+
+                try:
                     self.llm = self._llama_cls(
                         model_path=str(self.model_path),
                         n_ctx=profile.get("n_ctx", 2048),
                         n_threads=profile.get("n_threads", 4),
-                        n_gpu_layers=0,
+                        n_gpu_layers=gpu_layers,
                         verbose=False
                     )
-                else:
-                    raise e
+                except Exception as e:
+                    if gpu_layers > 0:
+                        print(f"GPU Model load failed ({e}). Attempting CPU fallback...")
+                        self.llm = self._llama_cls(
+                            model_path=str(self.model_path),
+                            n_ctx=profile.get("n_ctx", 2048),
+                            n_threads=profile.get("n_threads", 4),
+                        n_gpu_layers=0,
+                            verbose=False
+                        )
+                    else:
+                        raise e
                     
-            print(f"Model loaded successfully (GPU Layers: {gpu_layers if supports_gpu else 0}).")
-            return True
-        except Exception as e:
-            print(f"Failed to load model completely: {e}")
-            return False
+                print(f"Model loaded successfully (GPU Layers: {gpu_layers if supports_gpu else 0}).")
+                return True
+            except Exception as e:
+                print(f"Failed to load model completely: {e}")
+                return False
             
     def unload_model(self):
         """Unloads the model from memory to free RAM."""

@@ -77,12 +77,6 @@ def unload_model():
     ai_service.unload_model()
     return {"status": "success"}
 
-class ToolConfirmation(BaseModel):
-    token: str
-    tool_name: str
-    args: dict
-    session_id: str
-
 def verify_session_token(x_sentinel_session: str = Header(...)):
     expected_token = os.environ.get("SENTINEL_SESSION_TOKEN")
     if not expected_token:
@@ -92,12 +86,33 @@ def verify_session_token(x_sentinel_session: str = Header(...)):
         raise HTTPException(status_code=401, detail="Invalid session token.")
     return x_sentinel_session
 
+@app.post("/api/models/load")
+async def load_local_model(session_token: str = Depends(verify_session_token)):
+    from app.core.resource_governor import SystemState, resource_governor
+    if resource_governor.state in [SystemState.EMERGENCY, SystemState.HIGH_LOAD, SystemState.USER_PAUSED]:
+        raise HTTPException(status_code=503, detail="Cannot load AI model. Sentinel is currently in a restricted mode.")
+
+    from app.core.ai_service import ai_service
+    loop = asyncio.get_event_loop()
+    success = await loop.run_in_executor(None, ai_service.load_model)
+    if success:
+        return {"status": "success", "message": "Model loaded successfully."}
+    else:
+        raise HTTPException(status_code=503, detail="Service Unavailable: Failed to load local model (disabled, blocked, or unavailable).")
+
+class ToolConfirmation(BaseModel):
+    token: str
+    tool_name: str
+    args: dict
+    session_id: str
+
+
 @app.post("/api/tools/confirm")
 def confirm_tool_execution(confirmation: ToolConfirmation, session_token: str = Depends(verify_session_token)):
     from app.core.secure_runner import secure_runner
     result = secure_runner.execute(
-        tool_name=confirmation.tool_name, 
-        args=confirmation.args, 
+        tool_name=confirmation.tool_name,
+        args=confirmation.args,
         session_id=confirmation.session_id,
         token=confirmation.token
     )
@@ -176,61 +191,51 @@ async def chat_endpoint(websocket: WebSocket):
     if origin not in ["file://", "http://localhost:5173", "app://.", ""]: # Electron dev, prod, and sometimes blank
         # In actual prod we should strictly check the app protocol
         pass # We will primarily rely on the session token for security
-    
+
     # Token validation
     token = websocket.query_params.get("token")
     expected_token = os.environ.get("SENTINEL_SESSION_TOKEN")
-    
+
     if not expected_token or token != expected_token:
         await websocket.close(code=1008, reason="Unauthorized")
         return
 
     await websocket.accept()
-    
+
     # Per-connection cancellation flag and active request tracker
     cancel_event = asyncio.Event()
     active_request_id = None
     is_processing = False  # One-active-request-per-connection guard
-    
+
     # Initialize DB session and create a new thread for this connection
     db = SessionLocal()
     thread_id = memory_service.create_thread(db, title="Websocket Session")
-    
+
     await websocket.send_json({
-        "type": "status", 
+        "type": "status",
         "message": f"Connected to Sentinel Core. Memory initialized (Thread {thread_id[:8]})."
     })
-    
+
     # Cleanup any expired confirmation tokens from previous sessions
     from app.core.token_service import token_service
     token_service.cleanup_expired()
-    
-    # Lazy load model if needed
+
+    # Report if model is not loaded, do not auto-load
     if not ai_service.llm:
-        from app.core.resource_governor import SystemState
-        if resource_governor.state in [SystemState.EMERGENCY, SystemState.HIGH_LOAD, SystemState.USER_PAUSED]:
-            await websocket.send_json({"type": "status", "message": f"Cannot load AI model. Sentinel is currently in {resource_governor.state.value} mode."})
-        else:
-            await websocket.send_json({"type": "status", "message": "Loading AI model into memory. This may take a moment..."})
-            loop = asyncio.get_event_loop()
-            success = await loop.run_in_executor(None, ai_service.load_model)
-            if success:
-                await websocket.send_json({"type": "status", "message": "Model loaded successfully. Ready."})
-            else:
-                await websocket.send_json({"type": "error", "message": "Failed to load AI model."})
-    
+        await websocket.send_json({"type": "status", "message": "Local model not loaded. Please explicitly load a model to begin."})
+
     try:
         while True:
             # Reset cancellation for each new user message
             cancel_event.clear()
-            
+
             # Wait for user message (now JSON)
             raw_message = await websocket.receive_text()
             import uuid
             try:
                 import json
                 data = json.loads(raw_message)
-                
+
                 # Handle cancellation signal (always allowed, even during processing)
                 if data.get("type") == "cancel":
                     cancel_event.set()
@@ -241,15 +246,15 @@ async def chat_endpoint(websocket: WebSocket):
                     is_processing = False
                     await websocket.send_json({"type": "state", "state": "CANCELLED"})
                     continue
-                
+
                 # Reject concurrent requests — one active request per connection
                 if is_processing:
                     await websocket.send_json({
-                        "type": "error", 
+                        "type": "error",
                         "message": "A request is already in progress. Please cancel it first or wait for it to complete."
                     })
                     continue
-                
+
                 user_message = data.get("text", "")
                 voice_enabled = data.get("voice_enabled", False)
                 active_request_id = data.get("request_id", str(uuid.uuid4()))
@@ -260,9 +265,9 @@ async def chat_endpoint(websocket: WebSocket):
                 user_message = raw_message
                 voice_enabled = False
                 active_request_id = str(uuid.uuid4())
-            
+
             is_processing = True
-            
+
             # Phase 8: Explicit Memory Creation / Deletion
             lower_msg = user_message.lower()
             is_forget = False
@@ -277,16 +282,16 @@ async def chat_endpoint(websocket: WebSocket):
                 if memory_service.forget(db, fact.strip()):
                     memory_service.add_message(db, thread_id, "system", f"[Deleted from Personal Memory: {fact.strip()}]")
                     is_forget = True
-                    
+
             # Save user message to memory
             memory_service.add_message(db, thread_id, "user", user_message)
-            
+
             # Get history
             history = memory_service.get_context_history(db, thread_id, limit=6) # Last 6 messages
-            
+
             # Send an initial empty reply indicating generation is starting
             await websocket.send_json({"type": "reply_start"})
-            
+
             # Fetch custom system prompt
             custom_prompt = None
             try:
@@ -304,7 +309,7 @@ async def chat_endpoint(websocket: WebSocket):
                         "To use a tool, you MUST output a JSON block wrapped in <tool_call> tags. Example:\n"
                         '<tool_call>{"name": "search_web", "args": {"query": "current weather"}}</tool_call>\n'
                     )
-                
+
                 # Phase 8: Retrieve Bounded Memory
                 if not is_forget:
                     memories = memory_service.retrieve_relevant_memory(db, user_message, limit=3)
@@ -319,25 +324,25 @@ async def chat_endpoint(websocket: WebSocket):
                             custom_prompt = mem_block
             except Exception as e:
                 print("Failed to fetch settings/memory:", e)
-            
+
             MAX_CHAIN_DEPTH = 5
             chain_depth = 0
             current_prompt = user_message
-            
+
             while chain_depth < MAX_CHAIN_DEPTH:
                 chain_depth += 1
-                
+
                 # Check cancellation between chain iterations
                 if cancel_event.is_set():
                     await websocket.send_json({"type": "state", "state": "CANCELLED"})
                     break
-                
+
                 await websocket.send_json({"type": "state", "state": "THINKING"})
                 await websocket.send_json({"type": "reply_start"})
-                
+
                 # Fetch history here to ensure we pick up tool results from previous iterations
                 history = memory_service.get_context_history(db, thread_id, limit=8)
-                
+
                 full_response = ""
                 for token in ai_service.generate_stream(current_prompt, history=history, system_prompt=custom_prompt):
                     if cancel_event.is_set():
@@ -345,16 +350,16 @@ async def chat_endpoint(websocket: WebSocket):
                     full_response += token
                     await websocket.send_json({"type": "reply_chunk", "token": token})
                     await asyncio.sleep(0.01)
-                    
+
                 if cancel_event.is_set():
                     break
-                    
+
                 await websocket.send_json({"type": "reply_end"})
-                
+
                 # Phase 9: Structured Parsing
                 import re
                 tool_match = re.search(r'<tool_call>(.*?)</tool_call>', full_response, re.DOTALL)
-                
+
                 if tool_match:
                     tool_json = tool_match.group(1).strip()
                     try:
@@ -368,11 +373,11 @@ async def chat_endpoint(websocket: WebSocket):
                         memory_service.add_message(db, thread_id, "system", error_msg)
                         current_prompt = "Your previous tool call failed due to invalid JSON. Please fix it and try again."
                         continue
-                        
+
                     tool_name = tool_data["name"]
                     tool_args = tool_data.get("args", {})
                     tool_confidence = tool_data.get("confidence", "unknown")
-                    
+
                     # Phase 10: Confidence-based escalation
                     # If the LLM reports low confidence and the skill has a threshold,
                     # we escalate to confirmation regardless of tier.
@@ -382,15 +387,15 @@ async def chat_endpoint(websocket: WebSocket):
                             await websocket.send_json({"type": "status", "message": f"Low/Unknown confidence for '{tool_name}'. Requesting confirmation."})
                     except Exception:
                         pass  # Skill router not available for legacy tools
-                    
+
                     await websocket.send_json({"type": "state", "state": "EXECUTING"})
                     await websocket.send_json({"type": "status", "message": f"Running tool: {tool_name}..."})
-                    
+
                     # Execute tool in a separate thread so we don't block the WebSocket loop
                     loop = asyncio.get_event_loop()
                     from app.core.tools import execute_tool
                     result = await loop.run_in_executor(None, execute_tool, tool_name, tool_args, session_id, active_request_id)
-                    
+
                     # If this was a Needs Confirmation pause, stop the chain and prompt user
                     if isinstance(result, dict) and result.get("status") == "needs_confirmation":
                             # Phase 10: Enrich confirmation payload with skill metadata
@@ -406,7 +411,7 @@ async def chat_endpoint(websocket: WebSocket):
                                     }
                             except Exception:
                                 pass  # Legacy tool without skill manifest
-                            
+
                             await websocket.send_json({"type": "state", "state": "WAITING_FOR_PERMISSION"})
                             msg = f"Action '{tool_name}' requires your confirmation. Please review the details."
                             await websocket.send_json({"type": "status", "message": msg})
@@ -414,15 +419,15 @@ async def chat_endpoint(websocket: WebSocket):
                             memory_service.add_message(db, thread_id, "assistant", full_response)
                             memory_service.add_message(db, thread_id, "system", f"[Tool '{tool_name}' paused pending user confirmation.]")
                             break # Exit chain, waiting for user input
-                        
+
                     # Save successful execution
                     memory_service.add_message(db, thread_id, "assistant", full_response)
                     tool_result_msg = f"[Tool '{tool_name}' executed. Result: <untrusted_content>{result}</untrusted_content>]"
                     memory_service.add_message(db, thread_id, "system", tool_result_msg)
-                    
+
                     # Prepare prompt for the next chain iteration
                     current_prompt = "Please summarize the tool result or take the next required step."
-                    
+
                 else:
                     # No tool call, the chain ends naturally
                     memory_service.add_message(db, thread_id, "assistant", full_response)
@@ -431,14 +436,14 @@ async def chat_endpoint(websocket: WebSocket):
                         from app.core.voice_service import voice_service
                         voice_service.speak(full_response)
                     break
-                    
+
             if chain_depth >= MAX_CHAIN_DEPTH:
                 await websocket.send_json({"type": "status", "message": "Max tool chain depth reached."})
                 await websocket.send_json({"type": "state", "state": "COMPLETED"})
-            
+
             # Release the processing lock so new requests can be accepted
             is_processing = False
-            
+
     except WebSocketDisconnect:
         print("Client disconnected.")
     except Exception as e:
