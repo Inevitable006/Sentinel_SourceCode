@@ -140,6 +140,12 @@ def register_all_skills():
                 parameters={"query": {"type": "string"}},
                 required_capabilities=["network_access"]
             ),
+            SkillToolSchema(
+                name="skill_fetch_url",
+                description="Fetches the readable text content of a specific URL. Output is capped at 10KB and marked untrusted.",
+                parameters={"url": {"type": "string"}},
+                required_capabilities=["network_access"]
+            ),
         ],
         entry_point="skills.web_research",
         lazy_load=True,
@@ -149,6 +155,7 @@ def register_all_skills():
     
     _register_function_aliases("web_research", {
         "skill_search_web": "search_web",
+        "skill_fetch_url": "fetch_url",
     })
 
     print(f"[SkillLoader] Registered {len(skill_router.get_all_manifests())} skills.")

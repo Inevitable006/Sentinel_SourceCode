@@ -122,4 +122,59 @@ class ResearchService:
                 request_context.unregister_task(request_id)
             loop.close()
 
+    async def _async_fetch(self, url: str) -> str:
+        """Asynchronous safe fetch of a URL."""
+        try:
+            async with SafeAsyncClient() as client:
+                # 1MB payload limit is handled natively by httpx streaming if we use it,
+                # but for simplicity, we'll fetch and enforce the limit manually.
+                response = await client.safe_request("GET", url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=5.0)
+            
+            if response.status_code != 200:
+                return f"Fetch failed with status: {response.status_code}"
+                
+            html = response.text
+            
+            # Simple regex to strip HTML tags and scripts
+            html = re.sub(r'<script.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+            html = re.sub(r'<style.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r'<[^>]+>', ' ', html).strip()
+            
+            # Condense multiple spaces and newlines
+            text = re.sub(r'\s+', ' ', text)
+            
+            if len(text) > 10240:
+                text = text[:10240] + "\n... [TRUNCATED: Output exceeded 10KB limit]"
+                
+            return text
+        except Exception as e:
+            return f"Fetch failed: {e}"
+
+    def fetch_url(self, url: str, request_id: str = None) -> str:
+        """
+        Executes a safe URL fetch.
+        """
+        if self.local_mode:
+            return "System Error: Local Only mode is enabled. Web research is disabled."
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        task = loop.create_task(self._async_fetch(url))
+        
+        if request_id:
+            request_context.register_task(request_id, task)
+            
+        try:
+            result = loop.run_until_complete(task)
+            return result
+        except asyncio.CancelledError:
+            return "Error: Web research task was cancelled by the user."
+        except Exception as e:
+            return f"Fetch failed: {e}"
+        finally:
+            if request_id:
+                request_context.unregister_task(request_id)
+            loop.close()
+
 research_service = ResearchService()
