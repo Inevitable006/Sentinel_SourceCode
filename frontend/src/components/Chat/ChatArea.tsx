@@ -21,8 +21,45 @@ const ChatArea: React.FC = () => {
   const [input, setInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [modelLoadState, setModelLoadState] = useState<'unloaded'|'loading'|'loaded'|'failed'>('unloaded');
+  const [loadErrorMsg, setLoadErrorMsg] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleLoadModel = async () => {
+    setModelLoadState('loading');
+    setLoadErrorMsg('');
+    try {
+      let port = 8000;
+      let token = "dev_fallback_token";
+      
+      // @ts-ignore
+      if (window.sentinel?.auth) {
+        // @ts-ignore
+        port = await window.sentinel.auth.getBackendPort();
+        // @ts-ignore
+        token = await window.sentinel.auth.getSessionToken();
+      }
+
+      const response = await fetch(`http://127.0.0.1:${port}/api/models/load`, {
+        method: 'POST',
+        headers: {
+          'X-Sentinel-Session': token
+        }
+      });
+      
+      if (response.ok) {
+        setModelLoadState('loaded');
+      } else {
+        const errData = await response.json();
+        setLoadErrorMsg(errData.detail || 'Failed to load model');
+        setModelLoadState('failed');
+      }
+    } catch (e: any) {
+      setLoadErrorMsg(e.message || 'Connection error');
+      setModelLoadState('failed');
+    }
+  };
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -113,6 +150,18 @@ const ChatArea: React.FC = () => {
             <span className="badge badge-green">Connected</span>
           ) : (
             <span className="badge badge-red">Disconnected</span>
+          )}
+          {modelLoadState === 'unloaded' && (
+            <button className="badge badge-blue" onClick={handleLoadModel} style={{cursor: 'pointer', border: '1px solid currentColor', background: 'transparent', marginLeft: '0.5rem'}}>Load Local Model</button>
+          )}
+          {modelLoadState === 'loading' && (
+            <span className="badge badge-blue" style={{marginLeft: '0.5rem'}}>Loading...</span>
+          )}
+          {modelLoadState === 'loaded' && (
+            <span className="badge badge-green" style={{marginLeft: '0.5rem'}}>Model Ready</span>
+          )}
+          {modelLoadState === 'failed' && (
+            <span className="badge badge-red" title={loadErrorMsg} style={{marginLeft: '0.5rem'}}>Load Failed</span>
           )}
         </div>
         <div className="voice-toggle" onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', color: voiceEnabled ? 'var(--accent-primary)' : 'var(--text-secondary)' }}>
