@@ -46,6 +46,40 @@ def register_all_skills():
                 description="Returns safe local resource metrics (CPU and RAM usage).",
                 parameters={}
             ),
+            SkillToolSchema(
+                name="get_disk_usage",
+                description="Returns total, used, and free disk space for a given path. Defaults to the system root partition.",
+                parameters={
+                    "path": {
+                        "type": "string",
+                        "description": "Filesystem path to check. Must be an existing directory."
+                    }
+                }
+            ),
+            SkillToolSchema(
+                name="get_top_processes",
+                description="Returns the top N running processes sorted by CPU usage, memory usage, or name. Does not expose command-line arguments or user data.",
+                parameters={
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of processes to return. Clamped to 1-50."
+                    },
+                    "sort_by": {
+                        "type": "string",
+                        "description": "Sort field — one of 'cpu', 'memory', or 'name'."
+                    }
+                }
+            ),
+            SkillToolSchema(
+                name="get_network_stats",
+                description="Returns aggregate network I/O counters: bytes sent/received, packet counts, errors, and drops. Does not expose IP addresses or connections.",
+                parameters={}
+            ),
+            SkillToolSchema(
+                name="get_gpu_status",
+                description="Returns GPU utilization, memory, and temperature via nvidia-smi. Returns available: false with a reason string on systems without NVIDIA GPUs or without nvidia-smi installed.",
+                parameters={}
+            ),
         ],
         entry_point="skills.core_diagnostics",
         lazy_load=False,  # Core diagnostics should always be available
