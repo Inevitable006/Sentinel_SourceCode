@@ -58,3 +58,6 @@ backend/llama-bin/*.dll
 backend/llama-bin/*.exe
 backend/models/*.gguf
 electron.err
+
+# Local verification output (machine-specific)
+docs/runs/
