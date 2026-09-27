@@ -48,7 +48,7 @@ A separate AI reviewer, which hadn't seen the code being written, checked steps 
 **Branch:** `phase1/security`
 
 - **What changed:** Sentinel's memories, chats and settings now live in an **encrypted database** (`%APPDATA%\sentinel\sentinel.db`, SQLCipher). It stays closed until you unlock Sentinel with your **PIN**. While it's locked, nothing can read it: not the app, not another program, not someone who copies the file.
-- **First start:** Sentinel asks you to choose a PIN (6+ characters; a longer passphrase is stronger). It then shows a **recovery key** once, for example `ABCD-EFGH-…`. Save that key on paper or in a password manager. If you forget your PIN, or Windows is reinstalled, it's the only way back in. Nobody can reset the PIN for you, by design.
+- **First start:** Sentinel asks you to choose a PIN (6+ characters at this step; raised to 8+, or 10+ digits, in the review fixes above). It then shows a **recovery key** once, for example `ABCD-EFGH-…`. Save that key on paper or in a password manager. If you forget your PIN, or Windows is reinstalled, it's the only way back in. Nobody can reset the PIN for you, by design.
 - **Your existing data moves over by itself:** at setup, the old unencrypted database (`jarvis_memory.db`) is copied into the encrypted one. It's checked table by table and cleaned of rows left behind by old test runs: four known test memories, one test chat and empty chat sessions. The old file stays untouched until you delete it in **Settings → Security**.
 - **How the keys work, in short:** a random 256-bit key encrypts the database. That key is stored only in locked form, twice:
   - with your PIN (Argon2id, deliberately slow to guess) and then sealed by Windows DPAPI, so it also needs your Windows login;
