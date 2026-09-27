@@ -3,6 +3,7 @@
 #   tools\check.bat                  -> all steps
 #   tools\check.bat -Only tests      -> one step: env | tests | smoke | electron | gpu
 #   tools\check_quick.bat            -> tests + smoke + electron (no GPU benchmark)
+#   tools\check.bat -Only deps       -> install pinned Python packages (not part of 'all')
 # Read-only for your data: the smoke test uses an isolated temp data folder.
 param([string]$Only = "all")
 $ErrorActionPreference = "Continue"
@@ -27,6 +28,13 @@ function Stop-SentinelProcs {
   Section "RUN $(Get-Date -Format o)  (-Only $Only)"
   Set-Location $root
   git log -1 --oneline; "changed files: " + ((git status --short) | Measure-Object).Count
+
+  if ($Only -eq "deps") {
+    Section "PIP: install pinned backend requirements into backend\.venv"
+    & $py -m pip install --disable-pip-version-check -r (Join-Path $root "backend\requirements.txt")
+    "pip install exit code: $LASTEXITCODE"
+    & $py -m pip check; "pip check exit code: $LASTEXITCODE"
+  }
 
   if (Want "env") {
     Section "PYTHON"; & $py -c "import sys;print(sys.version)"
