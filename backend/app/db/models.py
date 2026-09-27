@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -40,3 +40,14 @@ class MemoryItem(Base):
     last_accessed_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)
 
+
+
+class ResearchEntry(Base):
+    """One web-search result Sentinel showed you (was research_history.json, unencrypted)."""
+    __tablename__ = "research_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text)
+    url = Column(Text)
+    title = Column(Text)
+    timestamp = Column(Float, index=True)

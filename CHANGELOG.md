@@ -7,6 +7,30 @@ Newest first. Each entry says what changed, why it matters and how to check it.
 
 ---
 
+## 2026-09-27 · Independent security review: fixes before your first PIN
+**Branch:** `phase1/security`
+
+A separate AI reviewer, which hadn't seen the code being written, checked steps 1.1–1.4 before your real data is moved. Everything it found is fixed:
+
+| Finding | Fix |
+|---|---|
+| The keystore file (your locked keys) was rewritten on every unlock without being flushed to disk. A power cut at the wrong moment could empty it and lock you out for good. | It's now written with `fsync`, only when something changes, and mirrored to `keystore.backup.json`. A damaged or missing copy is restored from the other one automatically. |
+| If the keystore went missing, Sentinel offered a fresh setup that would set your encrypted data aside. | Sentinel now shows "keystore missing, restore it from a backup" and refuses a new setup. The migration never overwrites an existing encrypted database. |
+| No way to get a new recovery key if you lose the first one. | **Settings → Security → Create a new recovery key** (needs your PIN). The old key stops working. |
+| After locking, a chat session created earlier could quietly reconnect to the database. An error during unlock could also leave the database open while Sentinel looked locked. | A closed database now refuses every new connection, all sessions are closed on lock, and any failure during unlock closes it again. |
+| Setting the Windows clock back kept the PIN "fresh" forever and could stretch the wait after wrong PINs indefinitely. | The PIN freshness and auto-lock timers use a clock that can't be changed from Windows settings. The wait is capped at one hour whatever the clock says. |
+| A 6-digit PIN can be guessed in about a day by a program running as you while Sentinel is locked. | New PINs need 8+ characters, or 10+ if they're digits only. Guessing is 2× slower too (Argon2id now uses 128 MiB per try). |
+| Research history (every web search and link) sat in a plaintext file, readable while locked. | It now lives in the encrypted database. The old `research_history.json` is imported at unlock. |
+| `audit.log` recorded the full arguments of every tool call (search terms, file paths). | It now records only the argument names with their type and length. |
+| Old `jarvis_memory.db.bak*` copies from an earlier script would have survived "delete old copy". | Settings lists every old plaintext file by name and deletes them together. The old database and research file are deleted only if they're exactly what was imported (checked by SHA-256 fingerprint). |
+| Removing old test rows happened without asking. | The setup screen now has a checkbox listing exactly which entries would be removed. It's on by default, and you can untick it. |
+| Approvals still worked while locked; `ping` ignored Offline mode; auto-lock could be switched off without the PIN. | Approvals return "locked" while locked. `ping` goes through the internet gate. Auto-lock changes need a fresh PIN. |
+
+- **Tests:** 263 pass, including the reviewer's exact reconnect-after-lock scenario. The quick check is green.
+- **Files:** `backend/app/core/vault.py`, `app/db/database.py`, `app/db/models.py`, `app/core/research_service.py`, `app/core/audit_logger.py`, `app/core/secure_runner.py`, `app/main.py`, tests, `frontend/src/components/Unlock/UnlockScreen.tsx`, `SettingsPanel.tsx`, `lib/backend.ts`
+
+---
+
 ## 2026-09-27 · Steps 1.3 + 1.4: your PIN, and an encrypted database
 **Branch:** `phase1/security`
 

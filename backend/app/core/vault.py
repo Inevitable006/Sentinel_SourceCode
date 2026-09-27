@@ -1,18 +1,21 @@
 """
 Owner unlock: who may open Sentinel's data, and the keys that protect it.
 
-Key layout (keystore.json in %APPDATA%\\sentinel):
+Key layout (keystore.json in %APPDATA%\\sentinel, plus keystore.backup.json):
 
   data key (32 random bytes) -- opens the encrypted database (SQLCipher raw key)
-   |-- PIN wrap:      AES-256-GCM with a key derived from your PIN (Argon2id, 64 MiB, 3 passes),
+   |-- PIN wrap:      AES-256-GCM with a key derived from your PIN (Argon2id, 128 MiB, 3 passes),
    |                  then sealed with Windows DPAPI: useless without your PIN AND your Windows login
    '-- recovery wrap: AES-256-GCM with a key derived from the recovery key (160 random bits, shown
                       to you once). Not tied to Windows, so it still works after a reinstall.
 
-keystore.json holds only wrapped keys, salts, settings and the failed-attempt counter.
-Nothing in it opens your data without your PIN or recovery key.
+The keystore holds only wrapped keys, salts, settings and the failed-attempt counter. Nothing in
+it opens your data without your PIN or recovery key. It is written with fsync and mirrored to
+keystore.backup.json whenever the wrapped keys change, so a crash or a damaged file can't lock
+you out of your own data.
 
 States: setup_required --setup--> unlocked <--lock/unlock--> locked
+        keystore_missing: an encrypted database exists but no keystore (restore it from a backup)
 """
 import base64
 import json
@@ -35,15 +38,17 @@ from app.core import dpapi
 from app.core.paths import SENTINEL_DATA_DIR
 
 KEYSTORE_VERSION = 1
-MIN_PIN_LENGTH = 6
+MIN_PIN_LENGTH = 8            # any characters
+MIN_DIGIT_PIN_LENGTH = 10     # digits only: 10^10 guesses x ~1 s each is out of reach even offline
 MAX_PIN_LENGTH = 128
-KDF_PARAMS = {"iterations": 3, "lanes": 4, "memory_cost": 65536}   # ~0.3-0.5 s on a desktop CPU
-FREE_ATTEMPTS = 5            # wrong PINs before waiting starts
-BASE_DELAY_S = 30            # then 30 s, 60 s, 120 s ... up to MAX_DELAY_S
+DEFAULT_KDF_PARAMS = {"iterations": 3, "lanes": 4, "memory_cost": 131072}   # Argon2id, 128 MiB: ~0.5-1 s
+KDF_PARAMS = dict(DEFAULT_KDF_PARAMS)   # tests swap in cheaper parameters
+FREE_ATTEMPTS = 5             # wrong PINs before waiting starts
+BASE_DELAY_S = 30             # then 30 s, 60 s, 120 s ... up to MAX_DELAY_S
 MAX_DELAY_S = 3600
 DEFAULT_AUTO_LOCK_MIN = 15
-FRESH_PIN_S = 300            # a PIN typed within 5 minutes counts as "fresh" for high-risk approvals
-PIN_REQUIRED_TIER = 3        # risk tier from which an approval needs a fresh PIN (decision D6)
+FRESH_PIN_S = 300             # a PIN typed within 5 minutes counts as "fresh" for high-risk approvals
+PIN_REQUIRED_TIER = 3         # risk tier from which an approval needs a fresh PIN (decision D6)
 DPAPI_ENTROPY = b"sentinel-dek-v1"
 AAD_PIN = b"sentinel-dek-v1|pin"
 AAD_RECOVERY = b"sentinel-dek-v1|recovery"
@@ -92,8 +97,10 @@ def _pin_bytes(pin: str, *, for_new_pin: bool) -> bytes:
     if for_new_pin:
         if len(p) < MIN_PIN_LENGTH:
             raise WeakPin(f"Use at least {MIN_PIN_LENGTH} characters. Longer is stronger.")
-        if len(set(p)) == 1:
-            raise WeakPin("Don't use the same character repeated.")
+        if p.isdigit() and len(p) < MIN_DIGIT_PIN_LENGTH:
+            raise WeakPin(f"A digits-only PIN needs at least {MIN_DIGIT_PIN_LENGTH} digits. Or mix in letters.")
+        if len(set(p)) <= 2:
+            raise WeakPin("That PIN is too repetitive.")
     return p.encode("utf-8")
 
 
@@ -122,46 +129,85 @@ def parse_recovery_key(text: str) -> bytes:
     return raw
 
 
+def _atomic_write_json(path: Path, data: Dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(data, indent=2))
+        f.flush()
+        os.fsync(f.fileno())       # on disk before it replaces the old file
+    os.replace(tmp, path)
+
+
 class Vault:
     def __init__(self, keystore_path: Optional[Path] = None,
-                 db_opener: Optional[Callable[[bytes, bool], Dict]] = None,
+                 db_opener: Optional[Callable[..., Dict]] = None,
                  db_closer: Optional[Callable[[], None]] = None,
-                 clock: Callable[[], float] = time.time):
+                 db_exists: Optional[Callable[[], bool]] = None,
+                 clock: Callable[[], float] = time.time,
+                 monotonic: Callable[[], float] = time.monotonic):
         self._path = Path(keystore_path) if keystore_path else SENTINEL_DATA_DIR / "keystore.json"
+        self._backup_path = self._path.with_name(self._path.stem + ".backup.json")
         self._open_db = db_opener
         self._close_db = db_closer
-        self._clock = clock
+        self._db_exists = db_exists or (lambda: False)
+        self._clock = clock            # wall clock: only for the persisted wait after wrong PINs
+        self._mono = monotonic         # can't be changed by setting the system clock
         self._lock = threading.RLock()
         self._dek: Optional[bytearray] = None
-        self._last_activity = 0.0
-        self._last_pin_at = 0.0
+        self._last_activity = float("-inf")
+        self._last_pin_at = float("-inf")
         self._auto_lock_min = DEFAULT_AUTO_LOCK_MIN
         self._listeners: List[Callable[[str], None]] = []
 
     # ── keystore file ───────────────────────────────────────────
-    def _read(self) -> Dict:
-        return json.loads(self._path.read_text(encoding="utf-8"))
+    def _has_keystore(self) -> bool:
+        return self._path.exists() or self._backup_path.exists()
 
-    def _write(self, data: Dict) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_name(self._path.name + ".tmp")
-        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        os.replace(tmp, self._path)
+    def _read(self) -> Dict:
+        for p in (self._path, self._backup_path):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                continue
+            except Exception:
+                print(f"[Vault] {p.name} is damaged; trying the other copy")
+                continue
+            if isinstance(data, dict) and "pin" in data and "recovery" in data:
+                if p is self._backup_path:
+                    print("[Vault] keystore.json was missing or damaged; restored it from keystore.backup.json")
+                    _atomic_write_json(self._path, data)
+                return data
+        raise VaultError("Sentinel's keystore is missing or damaged. Restore keystore.json or "
+                         "keystore.backup.json from a backup of %APPDATA%\\sentinel.")
+
+    def _write(self, data: Dict, *, keys_changed: bool = False) -> None:
+        _atomic_write_json(self._path, data)
+        if keys_changed:
+            _atomic_write_json(self._backup_path, data)
 
     # ── state ───────────────────────────────────────────────────
     def state(self) -> str:
         if self._dek is not None:
             return "unlocked"
-        return "locked" if self._path.exists() else "setup_required"
+        if self._has_keystore():
+            return "locked"
+        return "keystore_missing" if self._db_exists() else "setup_required"
 
     def is_unlocked(self) -> bool:
         return self._dek is not None
 
     def status(self) -> Dict:
         with self._lock:
-            ks = self._read() if self._path.exists() else {}
+            state = self.state()
+            ks: Dict = {}
+            if state in ("locked", "unlocked"):
+                try:
+                    ks = self._read()
+                except VaultError:
+                    ks = {}
             return {
-                "state": self.state(),
+                "state": state,
                 "retry_after": self._retry_after(ks) if ks else 0,
                 "failed_attempts": int(ks.get("failed_attempts", 0)) if ks else 0,
                 "auto_lock_minutes": int(ks.get("auto_lock_minutes", DEFAULT_AUTO_LOCK_MIN)) if ks else DEFAULT_AUTO_LOCK_MIN,
@@ -169,6 +215,7 @@ class Vault:
                 "pin_fresh": self.pin_fresh(),
                 "pin_required_tier": PIN_REQUIRED_TIER,
                 "min_pin_length": MIN_PIN_LENGTH,
+                "min_digit_pin_length": MIN_DIGIT_PIN_LENGTH,
             }
 
     def add_lock_listener(self, fn: Callable[[str], None]) -> None:
@@ -209,11 +256,13 @@ class Vault:
         except InvalidTag:
             raise WrongSecret("That recovery key doesn't match.")
 
-    # ── rate limiting ───────────────────────────────────────────
+    # ── rate limiting (wall clock, because it must survive restarts) ─
     def _retry_after(self, ks: Dict) -> int:
         until = float(ks.get("locked_until", 0) or 0)
         now = self._clock()
-        return int(until - now + 0.999) if until > now else 0
+        if until <= now:
+            return 0
+        return int(min(until - now, MAX_DELAY_S) + 0.999)
 
     def _register_failure(self, ks: Dict) -> None:
         n = int(ks.get("failed_attempts", 0)) + 1
@@ -223,21 +272,43 @@ class Vault:
         self._write(ks)
 
     def _check_rate(self, ks: Dict) -> None:
+        until = float(ks.get("locked_until", 0) or 0)
+        now = self._clock()
+        if until - now > MAX_DELAY_S:
+            # The clock was set back: never wait longer than the maximum.
+            ks["locked_until"] = now + MAX_DELAY_S
+            self._write(ks)
         wait = self._retry_after(ks)
         if wait > 0:
             raise RateLimited(wait)
+
+    def _clear_failures(self, ks: Dict) -> None:
+        if ks.get("failed_attempts") or ks.get("locked_until"):
+            ks["failed_attempts"], ks["locked_until"] = 0, 0
+            self._write(ks)
 
     # ── actions ─────────────────────────────────────────────────
     def _became_unlocked(self, dek: bytes, ks: Dict) -> None:
         self._dek = bytearray(dek)
         self._auto_lock_min = int(ks.get("auto_lock_minutes", DEFAULT_AUTO_LOCK_MIN))
-        now = self._clock()
+        now = self._mono()
         self._last_activity = self._last_pin_at = now
 
-    def setup(self, pin: str) -> Dict:
+    def _close_quietly(self) -> None:
+        try:
+            if self._close_db:
+                self._close_db()
+        except Exception as e:
+            print(f"[Vault] closing the database failed: {type(e).__name__}")
+
+    def setup(self, pin: str, remove_test_rows: bool = True) -> Dict:
         """First run: choose a PIN. Returns the recovery key (shown once) and the migration report."""
         with self._lock:
-            if self.state() != "setup_required":
+            state = self.state()
+            if state == "keystore_missing":
+                raise InvalidState("Your encrypted database exists but its keystore is missing. Restore keystore.json "
+                                   "(or keystore.backup.json) from a backup; a new setup could not open your data.")
+            if state != "setup_required":
                 raise InvalidState("Sentinel is already set up.")
             pin_b = _pin_bytes(pin, for_new_pin=True)
             dek, rk = secrets.token_bytes(32), secrets.token_bytes(20)
@@ -245,12 +316,11 @@ class Vault:
                   "failed_attempts": 0, "locked_until": 0,
                   "pin": self._pin_wrap(dek, pin_b), "recovery": self._recovery_wrap(dek, rk)}
             # Open (and migrate) BEFORE writing the keystore: if that fails, nothing is half set up.
-            report = self._open_db(dek, True) if self._open_db else {}
+            report = self._open_db(dek, True, remove_test_rows=remove_test_rows) if self._open_db else {}
             try:
-                self._write(ks)
+                self._write(ks, keys_changed=True)
             except Exception:
-                if self._close_db:
-                    self._close_db()
+                self._close_quietly()
                 raise
             self._became_unlocked(dek, ks)
             return {"recovery_key": format_recovery_key(rk), "migration": report}
@@ -260,8 +330,9 @@ class Vault:
             state = self.state()
             if state == "unlocked":
                 return {"state": "unlocked"}
-            if state == "setup_required":
-                raise InvalidState("Set up Sentinel first.")
+            if state != "locked":
+                raise InvalidState("Set up Sentinel first." if state == "setup_required"
+                                   else "The keystore is missing. Restore it from a backup.")
             ks = self._read()
             self._check_rate(ks)
             try:
@@ -271,16 +342,19 @@ class Vault:
                 raise
             if self._open_db:
                 self._open_db(dek, False)
-            ks["failed_attempts"], ks["locked_until"] = 0, 0
-            self._write(ks)
+            try:
+                self._clear_failures(ks)
+            except Exception:
+                self._close_quietly()
+                raise
             self._became_unlocked(dek, ks)
             return {"state": "unlocked"}
 
     def recover(self, recovery_key: str, new_pin: str) -> Dict:
         """Forgot the PIN (or new Windows account): unlock with the recovery key and set a new PIN."""
         with self._lock:
-            if self.state() == "setup_required":
-                raise InvalidState("Set up Sentinel first.")
+            if self.state() not in ("locked", "unlocked"):
+                raise InvalidState("There is no keystore to recover. Restore it from a backup, or set up Sentinel.")
             ks = self._read()
             self._check_rate(ks)
             new_pin_b = _pin_bytes(new_pin, for_new_pin=True)
@@ -289,11 +363,18 @@ class Vault:
             except WrongSecret:
                 self._register_failure(ks)
                 raise
+            opened_here = False
             if not self.is_unlocked() and self._open_db:
                 self._open_db(dek, False)
-            ks["pin"] = self._pin_wrap(dek, new_pin_b)
-            ks["failed_attempts"], ks["locked_until"], ks["pin_changed"] = 0, 0, _now_iso()
-            self._write(ks)
+                opened_here = True
+            try:
+                ks["pin"] = self._pin_wrap(dek, new_pin_b)
+                ks["failed_attempts"], ks["locked_until"], ks["pin_changed"] = 0, 0, _now_iso()
+                self._write(ks, keys_changed=True)
+            except Exception:
+                if opened_here:
+                    self._close_quietly()
+                raise
             self._became_unlocked(dek, ks)
             return {"state": "unlocked"}
 
@@ -311,8 +392,22 @@ class Vault:
                 raise
             ks["pin"] = self._pin_wrap(dek, new_pin_b)
             ks["failed_attempts"], ks["locked_until"], ks["pin_changed"] = 0, 0, _now_iso()
-            self._write(ks)
-            self._last_pin_at = self._last_activity = self._clock()
+            self._write(ks, keys_changed=True)
+            self._last_pin_at = self._last_activity = self._mono()
+
+    def new_recovery_key(self) -> str:
+        """Replaces the recovery key (the old one stops working). Needs a fresh PIN."""
+        with self._lock:
+            if not self.is_unlocked():
+                raise InvalidState("Unlock Sentinel first.")
+            if not self.pin_fresh():
+                raise VaultError("Enter your PIN first.")
+            ks = self._read()
+            rk = secrets.token_bytes(20)
+            ks["recovery"] = self._recovery_wrap(bytes(self._dek), rk)
+            ks["recovery_changed"] = _now_iso()
+            self._write(ks, keys_changed=True)
+            return format_recovery_key(rk)
 
     def verify_pin(self, pin: str) -> None:
         """Re-check the PIN while unlocked (before a high-risk action). Makes the PIN 'fresh'."""
@@ -326,38 +421,36 @@ class Vault:
             except WrongSecret:
                 self._register_failure(ks)
                 raise
-            if ks.get("failed_attempts"):
-                ks["failed_attempts"], ks["locked_until"] = 0, 0
-                self._write(ks)
-            self._last_pin_at = self._last_activity = self._clock()
+            self._clear_failures(ks)
+            self._last_pin_at = self._last_activity = self._mono()
 
     def lock(self, reason: str = "manual") -> None:
         with self._lock:
-            if self._dek is None:
-                return
+            was_unlocked = self._dek is not None
             try:
-                if self._close_db:
-                    self._close_db()
+                self._close_quietly()          # always: never leave the database open while "locked"
             finally:
-                for i in range(len(self._dek)):   # best effort: Python can't guarantee memory wiping
-                    self._dek[i] = 0
+                if self._dek is not None:
+                    for i in range(len(self._dek)):   # best effort: Python can't guarantee memory wiping
+                        self._dek[i] = 0
                 self._dek = None
-                self._last_pin_at = 0.0
-        for fn in list(self._listeners):
-            try:
-                fn(reason)
-            except Exception as e:
-                print(f"[Vault] lock listener failed: {type(e).__name__}")
+                self._last_pin_at = float("-inf")
+        if was_unlocked:
+            for fn in list(self._listeners):
+                try:
+                    fn(reason)
+                except Exception as e:
+                    print(f"[Vault] lock listener failed: {type(e).__name__}")
 
-    # ── activity, auto-lock, fresh PIN ──────────────────────────
+    # ── activity, auto-lock, fresh PIN (monotonic clock) ────────
     def touch(self) -> None:
         if self._dek is not None:
-            self._last_activity = self._clock()
+            self._last_activity = self._mono()
 
     def check_auto_lock(self) -> bool:
         if self._dek is None or not self._auto_lock_min:
             return False
-        if self._clock() - self._last_activity >= self._auto_lock_min * 60:
+        if self._mono() - self._last_activity >= self._auto_lock_min * 60:
             self.lock("idle")
             return True
         return False
@@ -371,12 +464,15 @@ class Vault:
                 raise InvalidState("Unlock Sentinel first.")
             ks = self._read()
             ks["auto_lock_minutes"] = minutes
-            self._write(ks)
+            self._write(ks, keys_changed=True)
             self._auto_lock_min = minutes
             return minutes
 
     def pin_fresh(self) -> bool:
-        return self._dek is not None and (self._clock() - self._last_pin_at) <= FRESH_PIN_S
+        if self._dek is None:
+            return False
+        elapsed = self._mono() - self._last_pin_at
+        return 0 <= elapsed <= FRESH_PIN_S
 
     def needs_pin_for_tier(self, tier: int) -> bool:
         return tier >= PIN_REQUIRED_TIER and not self.pin_fresh()
@@ -384,7 +480,8 @@ class Vault:
 
 def _make_default_vault() -> Vault:
     from app.db import database
-    return Vault(db_opener=database.open_for_vault, db_closer=database.close_database)
+    return Vault(db_opener=database.open_for_vault, db_closer=database.close_database,
+                 db_exists=lambda: database.ENCRYPTED_DB_PATH.exists())
 
 
 vault = _make_default_vault()

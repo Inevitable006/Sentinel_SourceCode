@@ -3,40 +3,48 @@ import time
 import asyncio
 import re
 import urllib.parse
-from app.core.paths import SENTINEL_DATA_DIR
 from app.core.request_context import request_context
 from app.core.network_utils import SafeAsyncClient
 
-HISTORY_FILE = SENTINEL_DATA_DIR / "research_history.json"
-
 class ResearchService:
+    """Web search + page fetch. History is kept in the encrypted database (table research_history),
+    so it is unreadable while Sentinel is locked."""
+
     def __init__(self):
         self.local_mode = False
-        self._load_history()
-
-    def _load_history(self):
-        if HISTORY_FILE.exists():
-            try:
-                with open(HISTORY_FILE, "r") as f:
-                    self.history = json.load(f)
-            except Exception:
-                self.history = []
-        else:
-            self.history = []
-
-    def _save_history(self):
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(self.history, f, indent=4)
 
     def set_local_mode(self, enabled: bool):
         self.local_mode = enabled
 
     def clear_history(self):
-        self.history = []
-        self._save_history()
+        from app.db.database import SessionLocal
+        from app.db.models import ResearchEntry
+        db = SessionLocal()
+        try:
+            db.query(ResearchEntry).delete()
+            db.commit()
+        finally:
+            db.close()
 
-    def get_history(self):
-        return self.history
+    def get_history(self, limit: int = 200):
+        from app.db.database import SessionLocal
+        from app.db.models import ResearchEntry
+        db = SessionLocal()
+        try:
+            rows = db.query(ResearchEntry).order_by(ResearchEntry.timestamp.desc()).limit(limit).all()
+            return [{"query": r.query, "url": r.url, "title": r.title, "timestamp": r.timestamp} for r in rows]
+        finally:
+            db.close()
+
+    def _record(self, entries):
+        from app.db.database import SessionLocal
+        from app.db.models import ResearchEntry
+        db = SessionLocal()
+        try:
+            db.add_all([ResearchEntry(**e) for e in entries])
+            db.commit()
+        finally:
+            db.close()
 
     async def _async_search(self, query: str) -> str:
         """Asynchronous DDG search execution using SafeAsyncClient."""
@@ -76,17 +84,18 @@ class ResearchService:
             
             output = f"Search Results for '{query}' (Retrieved at {time.strftime('%Y-%m-%d %H:%M:%S')}):\n\n"
             
+            now = time.time()
             for r in results:
                 url = r.get("href")
                 title = r.get("title")
                 snippet = r.get("body")
-                
-                self.history.append({"query": query, "url": url, "title": title, "timestamp": time.time()})
-                
                 output += f"Source: [{title}]({url})\n"
                 output += f"Snippet: {snippet}\n\n"
-                
-            self._save_history()
+            try:
+                self._record([{"query": query, "url": r.get("href"), "title": r.get("title"), "timestamp": now}
+                              for r in results])
+            except Exception as e:   # e.g. locked: the answer still goes back, history is skipped
+                print(f"[Research] history not saved ({type(e).__name__})")
             return output
         except Exception as e:
             return f"Web search failed: {e}"

@@ -101,8 +101,21 @@ def test_migration_encrypts_verifies_and_cleans(tmp_path):
     assert [r[0] for r in c.execute("SELECT id FROM fts_memory_items")] == ["m1"]    # index kept in step
     assert [r[0] for r in c.execute("SELECT id FROM threads ORDER BY id")] == ["t-real"]
     assert c.execute("SELECT count(*) FROM messages").fetchone()[0] == 2
+    fingerprint = c.execute("SELECT value FROM app_meta WHERE key = 'legacy_db_sha256'").fetchone()[0]
     c.close()
+    assert fingerprint == dbm._sha256(legacy)                       # remembered for the safe delete later
     assert not (tmp_path / "sentinel.db.migrating").exists()
+
+
+def test_migration_can_keep_old_test_rows(tmp_path):
+    import sqlcipher3.dbapi2 as sq
+    legacy, target, key = _old_style_database(tmp_path), tmp_path / "sentinel.db", os.urandom(32)
+    report = dbm.migrate_legacy_db(key, legacy=legacy, target=target, remove_test_rows=False)
+    assert report["test_rows_removed"] is None
+    c = sq.connect(str(target))
+    c.execute(f"PRAGMA key = \"x'{key.hex()}'\"")
+    assert c.execute("SELECT count(*) FROM memory_items").fetchone()[0] == 3
+    c.close()
 
 
 def test_migration_with_no_old_database(tmp_path):
@@ -110,9 +123,64 @@ def test_migration_with_no_old_database(tmp_path):
     assert report == {"migrated": False}
 
 
-def test_orphaned_encrypted_database_is_kept_aside(tmp_path):
+def test_migration_never_overwrites_an_existing_encrypted_database(tmp_path):
     target = tmp_path / "sentinel.db"
-    target.write_bytes(b"an encrypted database whose key was lost")
-    report = dbm.migrate_legacy_db(os.urandom(32), legacy=tmp_path / "none.db", target=target)
-    moved = report["orphaned_database_moved_to"]
-    assert moved.startswith("sentinel.db.orphaned-") and (tmp_path / moved).exists() and not target.exists()
+    target.write_bytes(b"an encrypted database whose keystore went missing")
+    with pytest.raises(dbm.MigrationError):
+        dbm.migrate_legacy_db(os.urandom(32), legacy=_old_style_database(tmp_path), target=target)
+    assert target.read_bytes() == b"an encrypted database whose keystore went missing"
+
+
+# ── review finding 2a: a session made before the lock can't reopen the database ──
+
+def test_a_session_from_before_the_lock_cannot_reconnect(reopen_db):
+    s = dbm.SessionLocal()
+    s.execute(text("SELECT count(*) FROM memory_items")).scalar()
+    s.commit()                                                     # connection goes back to the pool
+    dbm.close_database()
+    with pytest.raises(Exception):
+        s.execute(text("INSERT INTO app_meta (key, value) VALUES ('after-lock', 'x')"))
+        s.commit()
+    try:
+        s.close()
+    except Exception:
+        pass
+    assert not dbm._connections                                   # no keyed connection left open
+
+
+# ── research history is imported, then its plaintext file can be deleted safely ──
+
+def test_research_history_json_is_imported_once(tmp_path):
+    import json as _json
+    p = tmp_path / "research_history.json"
+    p.write_text(_json.dumps([{"query": "q1", "url": "https://a.example", "title": "A", "timestamp": 1.0},
+                              {"query": "q2", "url": "https://b.example", "title": "B", "timestamp": 2.0}]))
+    assert dbm.import_research_history_json(p) == 2
+    assert dbm.import_research_history_json(p) == 0               # same file: nothing new
+    from app.core.research_service import research_service
+    queries = {h["query"] for h in research_service.get_history()}
+    assert {"q1", "q2"} <= queries
+
+
+def test_old_plaintext_files_are_deleted_only_when_they_match(monkeypatch, tmp_path):
+    legacy = tmp_path / "jarvis_memory.db"
+    legacy.write_bytes(b"old plaintext database")
+    bak = tmp_path / "jarvis_memory.db.bak.20260801"
+    bak.write_bytes(b"older snapshot")
+    monkeypatch.setattr(dbm, "LEGACY_DB_PATH", legacy)
+    monkeypatch.setattr(dbm, "RESEARCH_JSON_PATH", tmp_path / "research_history.json")
+    monkeypatch.setattr(dbm, "SENTINEL_DATA_DIR", tmp_path)
+    assert set(dbm.old_plaintext_files()) == {"jarvis_memory.db", "jarvis_memory.db.bak.20260801"}
+    with dbm.get_engine().begin() as c:
+        dbm._meta_set(c, "legacy_db_sha256", "not-the-same-file")
+    out = dbm.delete_old_plaintext_files()
+    assert legacy.exists() and out["kept"][0]["file"] == "jarvis_memory.db"   # never migrated this exact file
+    assert out["deleted"] == ["jarvis_memory.db.bak.20260801"] and not bak.exists()
+    with dbm.get_engine().begin() as c:
+        dbm._meta_set(c, "legacy_db_sha256", dbm._sha256(legacy))
+    assert dbm.delete_old_plaintext_files()["deleted"] == ["jarvis_memory.db"] and not legacy.exists()
+
+
+def test_deleting_old_files_needs_an_unlocked_database(locked_db):
+    with pytest.raises(dbm.DatabaseLocked):
+        dbm.delete_old_plaintext_files()

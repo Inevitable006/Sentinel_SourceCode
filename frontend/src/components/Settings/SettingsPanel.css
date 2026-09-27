@@ -142,3 +142,8 @@
   background: rgba(251, 191, 36, 0.06); display: grid; gap: 0.5rem; max-width: 480px; }
 .old-db-warning p { margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45; }
 .old-db-warning strong { color: #fbbf24; }
+
+.old-db-warning ul { margin: 0; padding-left: 1.1rem; font-size: 0.8rem; color: var(--text-secondary); }
+.recovery-key-box { padding: 0.7rem; border-radius: var(--radius-sm); border: 1px dashed var(--accent-primary); background: var(--bg-tertiary); }
+.recovery-key-box p { margin: 0 0 0.4rem; font-size: 0.8rem; color: var(--text-secondary); }
+.recovery-key-box code { font-size: 0.95rem; letter-spacing: 0.05em; user-select: all; overflow-wrap: anywhere; }

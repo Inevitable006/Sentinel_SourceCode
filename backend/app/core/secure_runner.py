@@ -233,8 +233,16 @@ def run_system_op(operation: str, target: str = "", session_id: str = "default")
         if not re.match(r"^[\w\.-]+$", target):
             return "Error: Invalid hostname for ping."
             
+        # ping is network traffic too: the egress guard blocks it in Offline mode and logs it.
+        from app.core.egress import EgressBlocked, egress_guard, tool_context
+        try:
+            with tool_context("ping_host", network_allowed=True):   # this operation was already approved
+                rec = egress_guard.check("PING", target)
+        except EgressBlocked as e:
+            return f"Error: {e}"
         cmd = [r"c:\windows\system32\ping.exe", "-n", "4", target]
         success, stdout, stderr = safe_process.run_command(cmd, job_id=session_id)
+        egress_guard.record_result(rec, status=0 if success else 1)
         return stdout if success else stderr
         
     elif operation == "get_processes":

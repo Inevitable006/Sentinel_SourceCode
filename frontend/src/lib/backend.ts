@@ -83,10 +83,11 @@ export function timeAgo(iso: string): string {
 }
 
 export type UnlockStatus = {
-  state: 'setup_required' | 'locked' | 'unlocked';
+  state: 'setup_required' | 'locked' | 'unlocked' | 'keystore_missing';
   retry_after: number; failed_attempts: number; auto_lock_minutes: number;
-  windows_bound: boolean; pin_fresh: boolean; pin_required_tier: number; min_pin_length: number;
-  old_unencrypted_db?: boolean;
+  windows_bound: boolean; pin_fresh: boolean; pin_required_tier: number;
+  min_pin_length: number; min_digit_pin_length?: number;
+  old_unencrypted_db?: boolean; old_unencrypted_files?: string[];
 };
 
 // Lets any component ask the unlock gate to re-check right away (after Lock, or a "locked" message).

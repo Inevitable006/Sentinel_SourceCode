@@ -11,15 +11,24 @@ class AuditLogger:
         if not AUDIT_LOG_FILE.exists():
             AUDIT_LOG_FILE.touch()
 
+    REDACT_KEYS = ["token", "password", "secret", "prompt", "history", "pin", "key"]
+
     def _sanitize(self, data: dict) -> dict:
-        """Redact sensitive fields from the data before logging."""
+        """Redact sensitive fields before logging. Tool arguments are logged by name only (with type
+        and length): the audit log is not encrypted, and arguments can hold personal data such as
+        search terms or file paths."""
         sanitized = {}
-        redact_keys = ["token", "password", "secret", "prompt", "history"]
         for k, v in data.items():
-            if any(rk in k.lower() for rk in redact_keys):
+            kl = str(k).lower()
+            if any(rk in kl for rk in self.REDACT_KEYS):
                 sanitized[k] = "[REDACTED]"
+            elif kl == "args" and isinstance(v, dict):
+                sanitized[k] = {ak: ("[REDACTED]" if any(rk in str(ak).lower() for rk in self.REDACT_KEYS)
+                                     else f"<{type(av).__name__}, {len(str(av))} chars>") for ak, av in v.items()}
             elif isinstance(v, dict):
                 sanitized[k] = self._sanitize(v)
+            elif kl == "error":
+                sanitized[k] = str(v)[:200]
             else:
                 sanitized[k] = v
         return sanitized

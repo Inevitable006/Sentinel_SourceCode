@@ -19,7 +19,8 @@ const SettingsPanel: React.FC = () => {
   const [pinCurrent, setPinCurrent] = useState('');
   const [pinNew, setPinNew] = useState('');
   const [pinNew2, setPinNew2] = useState('');
-  const [oldDbPin, setOldDbPin] = useState('');
+  const [securityPin, setSecurityPin] = useState('');
+  const [newRecoveryKey, setNewRecoveryKey] = useState('');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
 
@@ -95,7 +96,7 @@ const SettingsPanel: React.FC = () => {
 
   const handleAutoLock = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     try {
-      const r = await apiPost<{ auto_lock_minutes: number }>('/api/unlock/auto-lock', { minutes: Number(e.target.value) });
+      const r = await apiPost<{ auto_lock_minutes: number }>('/api/unlock/auto-lock', { minutes: Number(e.target.value), pin: securityPin || undefined });
       say(r.auto_lock_minutes ? `Sentinel will lock after ${r.auto_lock_minutes} idle minutes.` : 'Auto-lock turned off.');
       refreshUnlock();
     } catch (err) { say(errText(err)); }
@@ -112,12 +113,21 @@ const SettingsPanel: React.FC = () => {
   };
 
   const handleDeleteOldDb = async () => {
-    if (!window.confirm('Delete the old unencrypted copy of your memory database? Your encrypted data stays. This cannot be undone.')) return;
+    if (!window.confirm('Delete the old unencrypted copies listed here? Your encrypted data stays. This cannot be undone.')) return;
     try {
-      const r = await apiPost<{ deleted: boolean }>('/api/unlock/delete-old-db', { pin: oldDbPin || undefined });
-      setOldDbPin('');
-      say(r.deleted ? 'Old unencrypted copy deleted.' : 'There was no old copy left to delete.');
+      const r = await apiPost<{ deleted: string[]; kept: { file: string; why: string }[] }>('/api/unlock/delete-old-db', { pin: securityPin || undefined });
+      const kept = r.kept.map(k => `${k.file} (kept: ${k.why})`).join('; ');
+      say(`Deleted: ${r.deleted.length ? r.deleted.join(', ') : 'nothing'}.${kept ? ' ' + kept : ''}`);
       refreshUnlock();
+    } catch (err) { say(errText(err)); }
+  };
+
+  const handleNewRecoveryKey = async () => {
+    if (!window.confirm('Create a new recovery key? The old one will stop working.')) return;
+    try {
+      const r = await apiPost<{ recovery_key: string }>('/api/unlock/new-recovery-key', { pin: securityPin || undefined });
+      setNewRecoveryKey(r.recovery_key);
+      say('New recovery key created. Save it now; it is shown only once.');
     } catch (err) { say(errText(err)); }
   };
 
@@ -293,6 +303,11 @@ const SettingsPanel: React.FC = () => {
           Your memories, chats and settings are encrypted on this PC. {unlock?.windows_bound ? 'The PIN only works together with your Windows login. ' : ''}
           Actions of risk level {unlock?.pin_required_tier ?? 3} and above (changing files, launching programs, deleting) ask for your PIN again if you haven't typed it in the last 5 minutes.
         </p>
+        <label className="settings-desc" htmlFor="security-pin" style={{ display: 'block', marginTop: '0.5rem' }}>
+          Your PIN (needed for the changes below if you haven't typed it in the last 5 minutes)
+        </label>
+        <input id="security-pin" type="password" autoComplete="current-password" className="settings-dropdown" style={{ maxWidth: '360px' }}
+               value={securityPin} onChange={e => setSecurityPin(e.target.value)} />
         <label className="settings-desc" htmlFor="auto-lock" style={{ display: 'block', marginTop: '0.5rem' }}>Lock automatically after</label>
         <select id="auto-lock" className="settings-dropdown" value={String(unlock?.auto_lock_minutes ?? 15)} onChange={handleAutoLock}>
           {[5, 15, 30, 60, 120].map(m => <option key={m} value={m}>{m} idle minutes</option>)}
@@ -307,11 +322,22 @@ const SettingsPanel: React.FC = () => {
           <button type="submit" className="save-btn" disabled={!pinCurrent || !pinNew}>Change PIN</button>
         </form>
 
+        <div style={{ marginTop: '1rem', display: 'grid', gap: '0.5rem', maxWidth: '480px' }}>
+          <button type="button" className="save-btn" onClick={handleNewRecoveryKey}>Create a new recovery key</button>
+          {newRecoveryKey && (
+            <div className="recovery-key-box">
+              <p>Your new recovery key (shown once; the old one no longer works):</p>
+              <code>{newRecoveryKey}</code>
+            </div>
+          )}
+        </div>
+
         {unlock?.old_unencrypted_db && (
           <div className="old-db-warning">
-            <p><strong>An unencrypted copy of your old memory database is still on this PC</strong> (<code>jarvis_memory.db</code>). Your data is already in the encrypted database, so you can delete it.</p>
-            <input id="old-db-pin" type="password" placeholder="PIN" autoComplete="current-password" className="settings-dropdown" value={oldDbPin} onChange={e => setOldDbPin(e.target.value)} />
-            <button type="button" className="save-btn" style={{ backgroundColor: 'var(--accent-red)' }} onClick={handleDeleteOldDb}>Delete old unencrypted copy</button>
+            <p><strong>Old unencrypted copies of your data are still on this PC:</strong></p>
+            <ul>{(unlock.old_unencrypted_files ?? []).map(f => <li key={f}><code>{f}</code></li>)}</ul>
+            <p>Their contents are already in the encrypted database. Files are only deleted if they're exactly what was moved in.</p>
+            <button type="button" className="save-btn" style={{ backgroundColor: 'var(--accent-red)' }} onClick={handleDeleteOldDb}>Delete old unencrypted copies</button>
           </div>
         )}
       </div>

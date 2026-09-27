@@ -22,6 +22,7 @@ const UnlockScreen: React.FC<Props> = ({ status, onChanged, setHoldOpen }) => {
   const [migration, setMigration] = useState<Migration | null>(null);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [removeTestRows, setRemoveTestRows] = useState(true);
 
   useEffect(() => { setWait(status.retry_after || 0); }, [status.retry_after]);
   useEffect(() => {
@@ -39,7 +40,9 @@ const UnlockScreen: React.FC<Props> = ({ status, onChanged, setHoldOpen }) => {
     }
   };
 
-  const min = status.min_pin_length || 6;
+  const min = status.min_pin_length || 8;
+  const minDigits = status.min_digit_pin_length || 10;
+  const pinLooksOk = (p: string) => p.length >= min && (!/^\d+$/.test(p) || p.length >= minDigits);
 
   const doSetup = async (ev: React.FormEvent) => {
     ev.preventDefault();
@@ -48,7 +51,7 @@ const UnlockScreen: React.FC<Props> = ({ status, onChanged, setHoldOpen }) => {
     setBusy(true);
     setHoldOpen(true);
     try {
-      const r = await apiPost<{ recovery_key: string; migration: Migration }>('/api/unlock/setup', { pin });
+      const r = await apiPost<{ recovery_key: string; migration: Migration }>('/api/unlock/setup', { pin, remove_test_rows: removeTestRows });
       setRecoveryKey(r.recovery_key);
       setMigration(r.migration);
       setPin(''); setPin2('');
@@ -140,6 +143,21 @@ const UnlockScreen: React.FC<Props> = ({ status, onChanged, setHoldOpen }) => {
     );
   }
 
+  // Encrypted data exists but its keystore is gone: never offer a new setup (it couldn't open the data).
+  if (status.state === 'keystore_missing') {
+    return (
+      <div className="unlock-screen">
+        <div className="unlock-card wide">
+          <Lock size={28} className="unlock-icon" />
+          <h1>Sentinel's keystore is missing</h1>
+          <p>Your encrypted data is still here, but the file that holds its locked keys is gone.</p>
+          <p>Restore <code>keystore.json</code> or <code>keystore.backup.json</code> into <code>%APPDATA%\sentinel</code> from a backup, then restart Sentinel. Your PIN or recovery key will work again.</p>
+          <p className="unlock-muted">Sentinel won't start a new setup here, because a new setup could never open your existing data.</p>
+        </div>
+      </div>
+    );
+  }
+
   // 2) First run: choose a PIN.
   if (status.state === 'setup_required') {
     return (
@@ -148,12 +166,21 @@ const UnlockScreen: React.FC<Props> = ({ status, onChanged, setHoldOpen }) => {
           <KeyRound size={28} className="unlock-icon" />
           <h1>Set up Sentinel</h1>
           <p>Choose a PIN. It encrypts your memories, chats and settings on this PC{status.windows_bound ? ', and it only works together with your Windows login' : ''}.</p>
-          <label htmlFor="setup-pin">PIN ({min}+ characters; longer is stronger)</label>
+          <label htmlFor="setup-pin">PIN ({min}+ characters, or {minDigits}+ if only digits)</label>
           <input id="setup-pin" type="password" autoFocus autoComplete="new-password" value={pin} onChange={e => setPin(e.target.value)} />
           <label htmlFor="setup-pin2">Type it again</label>
           <input id="setup-pin2" type="password" autoComplete="new-password" value={pin2} onChange={e => setPin2(e.target.value)} />
+          <label className="unlock-check" htmlFor="remove-test-rows">
+            <input id="remove-test-rows" type="checkbox" checked={removeTestRows} onChange={e => setRemoveTestRows(e.target.checked)} />
+            Remove leftovers from old test runs
+          </label>
+          <p className="unlock-muted">
+            Only exact test entries: the memories "I like pizza.", "My favorite color is neon green.",
+            "My super secret password is password123." and "my favourite editor is neovim", chats whose only
+            message is "What is Python?", and empty chat sessions. Your old file is kept either way.
+          </p>
           {error && <p className="unlock-error" role="alert">{error}</p>}
-          <button type="submit" className="unlock-primary" disabled={busy || pin.length < min}>
+          <button type="submit" className="unlock-primary" disabled={busy || !pinLooksOk(pin)}>
             {busy ? 'Encrypting…' : 'Encrypt my data'}
           </button>
           <p className="unlock-muted">Nobody, including Anthropic or Google, can reset this PIN. You'll get a recovery key next.</p>
@@ -187,13 +214,13 @@ const UnlockScreen: React.FC<Props> = ({ status, onChanged, setHoldOpen }) => {
           <label htmlFor="recovery-input">Recovery key</label>
           <input id="recovery-input" type="text" autoFocus spellCheck={false} placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
                  value={recoveryInput} onChange={e => setRecoveryInput(e.target.value)} disabled={waiting} />
-          <label htmlFor="recover-pin">New PIN ({min}+ characters)</label>
+          <label htmlFor="recover-pin">New PIN ({min}+ characters, or {minDigits}+ if only digits)</label>
           <input id="recover-pin" type="password" autoComplete="new-password" value={pin} onChange={e => setPin(e.target.value)} disabled={waiting} />
           <label htmlFor="recover-pin2">Type the new PIN again</label>
           <input id="recover-pin2" type="password" autoComplete="new-password" value={pin2} onChange={e => setPin2(e.target.value)} disabled={waiting} />
           {error && <p className="unlock-error" role="alert">{error}</p>}
           {waiting && <p className="unlock-muted">You can try again in {wait} s.</p>}
-          <button type="submit" className="unlock-primary" disabled={busy || waiting || !recoveryInput || pin.length < min}>
+          <button type="submit" className="unlock-primary" disabled={busy || waiting || !recoveryInput || !pinLooksOk(pin)}>
             {busy ? 'Checking…' : 'Unlock and set new PIN'}
           </button>
           <button type="button" className="unlock-link" onClick={() => { setMode('pin'); setError(''); setPin(''); setPin2(''); }}>

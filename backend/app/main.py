@@ -194,6 +194,8 @@ class ToolConfirmation(BaseModel):
 def confirm_tool_execution(confirmation: ToolConfirmation, session_token: str = Depends(verify_session_token)):
     from app.core.secure_runner import secure_runner
     from app.core.tool_registry import tool_registry
+    if not vault.is_unlocked():
+        raise HTTPException(status_code=423, detail="Sentinel is locked. Unlock it first.")
     vault.touch()
     # High-risk actions (Tier 3+: change files, launch programs, delete) need a PIN typed in the
     # last few minutes, so someone at an unlocked PC can't approve them on your behalf.
@@ -314,10 +316,15 @@ class ChangePinBody(BaseModel):
     current_pin: str
     new_pin: str
 
+class SetupBody(BaseModel):
+    pin: str
+    remove_test_rows: bool = True
+
 class AutoLockBody(BaseModel):
     minutes: int
+    pin: str | None = None
 
-class DeleteOldDbBody(BaseModel):
+class FreshPinBody(BaseModel):
     pin: str | None = None
 
 
@@ -331,16 +338,32 @@ def _raise_vault_error(e: VaultError):
     raise HTTPException(status_code=400, detail={"message": str(e)})
 
 
+def _require_fresh_pin(pin: str | None, message: str = "Enter your PIN to do this."):
+    """Security-relevant changes need a PIN typed in the last few minutes."""
+    if not vault.is_unlocked():
+        raise HTTPException(status_code=423, detail="Sentinel is locked. Unlock it first.")
+    if vault.pin_fresh():
+        return
+    if not pin:
+        raise HTTPException(status_code=403, detail={"code": "pin_required", "message": message})
+    try:
+        vault.verify_pin(pin)
+    except VaultError as e:
+        _raise_vault_error(e)
+
+
 @app.get("/api/unlock/status")
 def unlock_status(session_token: str = Depends(verify_session_token)):
     st = vault.status()
-    st["old_unencrypted_db"] = db_store.legacy_db_present()
+    files = db_store.old_plaintext_files()
+    st["old_unencrypted_db"] = bool(files)
+    st["old_unencrypted_files"] = files
     return st
 
 @app.post("/api/unlock/setup")
-def unlock_setup(body: PinBody, session_token: str = Depends(verify_session_token)):
+def unlock_setup(body: SetupBody, session_token: str = Depends(verify_session_token)):
     try:
-        return vault.setup(body.pin)
+        return vault.setup(body.pin, remove_test_rows=body.remove_test_rows)
     except VaultError as e:
         _raise_vault_error(e)
     except Exception as e:
@@ -378,8 +401,18 @@ def unlock_verify(body: PinBody, session_token: str = Depends(verify_session_tok
 
 @app.post("/api/unlock/auto-lock")
 def unlock_auto_lock(body: AutoLockBody, session_token: str = Depends(verify_session_token)):
+    _require_fresh_pin(body.pin, "Enter your PIN to change auto-lock.")
     try:
         return {"auto_lock_minutes": vault.set_auto_lock_minutes(body.minutes)}
+    except VaultError as e:
+        _raise_vault_error(e)
+
+@app.post("/api/unlock/new-recovery-key")
+def unlock_new_recovery_key(body: FreshPinBody, session_token: str = Depends(verify_session_token)):
+    """Issues a new recovery key (shown once); the old one stops working."""
+    _require_fresh_pin(body.pin, "Enter your PIN to create a new recovery key.")
+    try:
+        return {"recovery_key": vault.new_recovery_key()}
     except VaultError as e:
         _raise_vault_error(e)
 
@@ -389,16 +422,11 @@ def lock_now(session_token: str = Depends(verify_session_token)):
     return {"state": vault.state()}
 
 @app.post("/api/unlock/delete-old-db")
-def delete_old_unencrypted_db(body: DeleteOldDbBody, session_token: str = Depends(verify_session_token)):
-    """Deletes the old unencrypted database after migration. Needs a fresh PIN (it deletes data)."""
-    if vault.needs_pin_for_tier(4):
-        if not body.pin:
-            raise HTTPException(status_code=403, detail={"code": "pin_required", "message": "Enter your PIN to delete the old copy."})
-        try:
-            vault.verify_pin(body.pin)
-        except VaultError as e:
-            _raise_vault_error(e)
-    return {"deleted": db_store.delete_legacy_db()}
+def delete_old_unencrypted_files(body: FreshPinBody, session_token: str = Depends(verify_session_token)):
+    """Deletes old unencrypted copies (old database, its .bak snapshots, old research history) after
+    they were moved into the encrypted database. Needs a fresh PIN (it deletes data)."""
+    _require_fresh_pin(body.pin, "Enter your PIN to delete the old copies.")
+    return db_store.delete_old_plaintext_files()
 
 @app.websocket("/ws/chat")
 async def chat_endpoint(websocket: WebSocket):
