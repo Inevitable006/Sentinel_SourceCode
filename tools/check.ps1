@@ -4,6 +4,8 @@
 #   tools\check.bat -Only tests      -> one step: env | tests | smoke | electron | gpu
 #   tools\check_quick.bat            -> tests + smoke + electron (no GPU benchmark)
 #   tools\check.bat -Only deps       -> install pinned Python packages (not part of 'all')
+#   tools\check.bat -Only pytest     -> backend tests only (fast)
+#   tools\check.bat -Only probe      -> which packages have wheels for this Python (installs nothing)
 # Read-only for your data: the smoke test uses an isolated temp data folder.
 param([string]$Only = "all")
 $ErrorActionPreference = "Continue"
@@ -29,11 +31,30 @@ function Stop-SentinelProcs {
   Set-Location $root
   git log -1 --oneline; "changed files: " + ((git status --short) | Measure-Object).Count
 
+  if ($Only -eq "pytest") {
+    Section "PYTEST backend/tests (fast run: backend only)"
+    Set-Location (Join-Path $root "backend"); $env:PYTHONPATH = (Join-Path $root "backend")
+    & $py -m pytest tests -q -rfEs --tb=short -p no:cacheprovider -W ignore::DeprecationWarning
+    "pytest exit code: $LASTEXITCODE"
+  }
+
+  if ($Only -eq "probe") {
+    Section "PROBE: ready-made wheels for this Python (downloads to TEMP, installs nothing)"
+    $probeDir = Join-Path $env:TEMP "sentinel_probe"
+    New-Item -ItemType Directory -Force $probeDir | Out-Null
+    foreach ($pkg in @("sqlcipher3-wheels", "sqlcipher3-binary", "apsw-sqlite3mc", "cryptography", "nvidia-ml-py", "argon2-cffi-bindings")) {
+      $o = & $py -m pip download --disable-pip-version-check --no-deps --only-binary=:all: --dest $probeDir $pkg 2>&1 | Out-String
+      $w = [regex]::Match($o, '([^\\/\s]+\.whl)').Groups[1].Value
+      if ($w) { "OK    $pkg -> $w" } else { "NONE  $pkg -> " + ((($o -split "`n") | Where-Object { $_ -match 'ERROR' } | Select-Object -First 1)) }
+    }
+  }
+
   if ($Only -eq "deps") {
     Section "PIP: install pinned backend requirements into backend\.venv"
     & $py -m pip install --disable-pip-version-check -r (Join-Path $root "backend\requirements.txt")
     "pip install exit code: $LASTEXITCODE"
     & $py -m pip check; "pip check exit code: $LASTEXITCODE"
+    Section "PIP FREEZE"; & $py -m pip freeze
   }
 
   if (Want "env") {

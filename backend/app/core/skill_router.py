@@ -15,6 +15,7 @@ from app.core.skill_manifest import (
 from app.core.skill_verifier import skill_verifier
 from app.core.tool_registry import tool_registry, ToolDefinition, ToolSchema, RiskTier
 from app.core.audit_logger import audit_logger
+from app.core.gpu_monitor import gpu_monitor
 
 
 class SkillLoadError(Exception):
@@ -207,33 +208,12 @@ class SkillRouter:
         return True, "OK"
 
     def _is_gpu_available(self) -> bool:
-        """Checks if an NVIDIA GPU is available."""
-        import subprocess
-        try:
-            result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                capture_output=True, text=True, timeout=2
-            )
-            return result.returncode == 0 and bool(result.stdout.strip())
-        except Exception:
-            return False
+        """Checks if an NVIDIA GPU is available (cached NVML reading, no process spawn)."""
+        return bool(gpu_monitor.snapshot()["available"])
 
     def _get_vram_percent(self) -> Optional[float]:
-        """Gets current VRAM usage percentage."""
-        import subprocess
-        try:
-            result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=memory.used,memory.total",
-                 "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=2
-            )
-            if result.returncode == 0:
-                parts = result.stdout.strip().split(",")
-                used, total = float(parts[0]), float(parts[1])
-                return (used / total) * 100 if total > 0 else None
-        except Exception:
-            pass
-        return None
+        """Gets current VRAM usage percentage (cached NVML reading, no process spawn)."""
+        return gpu_monitor.snapshot()["vram_percent"]
 
     # ── Module Loading ──────────────────────────────────────────
 

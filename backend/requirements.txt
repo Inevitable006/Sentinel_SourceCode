@@ -16,3 +16,4 @@ pyttsx3==2.90
 # NOTE: this build is CPU-only on Python 3.14 (llama_supports_gpu_offload() == False),
 # so the RTX 3050 is not used. See docs/ROADMAP.md -> "GPU inference decision".
 llama-cpp-python==0.2.60
+nvidia-ml-py==13.615.71     # GPU stats via NVML (no nvidia-smi process per poll)

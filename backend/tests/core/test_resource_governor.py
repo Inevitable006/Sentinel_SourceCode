@@ -1,7 +1,7 @@
 """
 Resource governor state-machine tests.
 
-All psutil / nvidia-smi calls are mocked; no real system load is measured.
+All psutil / GPU readings are mocked; no real system load is measured.
 The model unload hook is mocked so no AI service is touched.
 """
 from types import SimpleNamespace
@@ -9,14 +9,17 @@ from unittest.mock import patch
 
 import pytest
 
+from app.core.gpu_monitor import _empty
 from app.core.resource_governor import ResourceGovernor, SystemState
+
+_NO_GPU = _empty()
 
 
 def _tick(gov, cpu=10.0, ram=10.0):
     """Run one governor check with the given CPU/RAM percentages (no GPU)."""
     with patch("psutil.cpu_percent", return_value=cpu), \
          patch("psutil.virtual_memory", return_value=SimpleNamespace(percent=ram)), \
-         patch("subprocess.run", side_effect=FileNotFoundError("nvidia-smi")):
+         patch("app.core.resource_governor.gpu_monitor.snapshot", return_value=_NO_GPU):
         gov._check_resources()
 
 

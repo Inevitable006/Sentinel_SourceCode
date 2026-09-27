@@ -17,10 +17,10 @@ _Last updated: 2026-09-27_
 ## Phase 1: Security foundation (branch `phase1/security`)
 | Step | Task | Status | Notes |
 |---|---|---|---|
-| 1.0 | Setup: watcher, `AGENTS.md`, tracker, change notes | 🔄 | |
-| 1.0 | Governor reads the GPU through NVML, off the event loop | ⏳ | stops chat stalls of up to 2 s |
-| 1.0 | Dependency sync on Windows (`deps` check) | ⏳ | |
-| 1.1 | Egress guard: allowlist, approval for new sites, log of every call | ⏳ | |
+| 1.0 | Setup: watcher, `AGENTS.md`, tracker, change notes | ✅ | commit 53d2af0 |
+| 1.0 | Governor reads the GPU through NVML, off the event loop | ✅ | 174 tests pass, real RTX 3050 read |
+| 1.0 | Dependency sync on Windows (`deps` check) | ✅ | also `pytest` + `probe` checks |
+| 1.1 | Egress guard: allowlist, approval for new sites, log of every call | 🔄 | |
 | 1.1 | Tests run fully offline (socket guard) | ⏳ | |
 | 1.1 | Electron blocks non-local requests; "online" indicator in the UI | ⏳ | |
 | 1.2 | WebSocket session token out of the URL | ⏳ | |

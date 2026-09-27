@@ -3,6 +3,8 @@ import psutil
 from enum import Enum
 import time
 
+from app.core.gpu_monitor import gpu_monitor
+
 class SystemState(Enum):
     IDLE = "idle"
     INTERACTIVE = "interactive"
@@ -46,31 +48,37 @@ class ResourceGovernor:
         if self._task is not None:
             self._task.cancel()
             self._task = None
+        gpu_monitor.shutdown()
             
     async def _monitor_loop(self):
         while True:
             if not self.manual_override:
-                self._check_resources()
+                try:
+                    # Blocking reads (psutil, GPU) run in a worker thread so the event loop
+                    # (chat streaming, WebSocket) never waits on them. State changes and
+                    # model unloading stay on the event-loop thread.
+                    metrics = await asyncio.to_thread(self._read_metrics)
+                    if not self.manual_override:
+                        self._evaluate(*metrics)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    print(f"[ResourceGovernor] Monitoring error (will retry): {type(e).__name__}: {e}")
             await asyncio.sleep(self.poll_interval)
-            
-    def _check_resources(self):
+
+    def _read_metrics(self):
+        """Returns (cpu %, ram %, vram %). vram is 0.0 when no GPU reading is available."""
         cpu = psutil.cpu_percent(interval=None)
-        mem = psutil.virtual_memory()
-        ram = mem.percent
-        vram = 0
-        
-        # Try to get VRAM if NVIDIA SMI is available
-        import subprocess
-        try:
-            result = subprocess.run(['nvidia-smi', '--query-gpu=memory.used,memory.total', '--format=csv,noheader,nounits'], 
-                                    capture_output=True, text=True, timeout=2)
-            if result.returncode == 0:
-                used, total = map(float, result.stdout.strip().split(',')[0:2])
-                if total > 0:
-                    vram = (used / total) * 100
-        except Exception:
-            pass
-        
+        ram = psutil.virtual_memory().percent
+        gpu = gpu_monitor.snapshot()
+        vram = gpu["vram_percent"] if gpu["available"] and gpu["vram_percent"] is not None else 0.0
+        return cpu, ram, vram
+
+    def _check_resources(self):
+        """One synchronous check (tests and callers outside the monitor loop)."""
+        self._evaluate(*self._read_metrics())
+
+    def _evaluate(self, cpu, ram, vram):
         # Check emergency thresholds
         if cpu >= self.cpu_emerg_threshold or ram >= self.ram_emerg_threshold or vram >= 95.0:
             self.emergency_count += 1
@@ -127,7 +135,8 @@ class ResourceGovernor:
             "state": self.state.value,
             "cpu_percent": psutil.cpu_percent(),
             "ram_percent": psutil.virtual_memory().percent,
-            "manual_override": self.manual_override
+            "manual_override": self.manual_override,
+            "gpu": gpu_monitor.peek(),
         }
 
 resource_governor = ResourceGovernor.get_instance()

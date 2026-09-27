@@ -7,6 +7,18 @@ Newest first. Each entry says what changed, why it matters and how to check it.
 
 ---
 
+## 2026-09-27 · Step 1.0: GPU readings without stalls
+**Branch:** `phase1/security`
+
+- **What changed:** Sentinel now reads your GPU (memory, load, temperature) through NVIDIA's own library, NVML, inside the backend. It no longer starts an `nvidia-smi` program every 5 seconds. One reading is shared by every part of the app for 2 seconds, and it's taken off the main loop.
+- **Why it matters:** each `nvidia-smi` start could freeze chat streaming for up to 2 seconds. A reading now takes under a millisecond. If NVML is missing, Sentinel falls back to a single `nvidia-smi` call. With no NVIDIA GPU at all, it quietly reports "no GPU" and tries again a minute later instead of on every poll.
+- **Also new:** the system status now includes GPU details. The watcher gained `pytest` (fast backend tests) and `probe` (checks which packages have ready-made Windows wheels). It now opens minimized, can't be frozen by a stray click, and writes a heartbeat.
+- **New package:** `nvidia-ml-py 13.615.71`, NVIDIA's official Python binding. It makes no network calls.
+- **Tests:** 174 pass on your PC, including one that reads your real RTX 3050.
+- **Files:** `backend/app/core/gpu_monitor.py` (new), `resource_governor.py`, `skill_router.py`, `requirements.txt`, `tests/core/test_gpu_monitor.py` (new), `tests/core/test_resource_governor.py`, `tools/check.ps1`, `tools/watch_checks.ps1`, `tools/start_watcher.bat`
+
+---
+
 ## 2026-09-27 · Phase 1 setup
 **Branch:** `phase1/security`
 
