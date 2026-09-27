@@ -7,6 +7,19 @@ Newest first. Each entry says what changed, why it matters and how to check it.
 
 ---
 
+## 2026-09-27 · Steps 1.5 + 1.6: secrets vault, log masking, real deletion, retention
+**Branch:** `phase1/security`
+
+- **Secrets vault:** **Settings → Security** has a place for API keys and passwords that future integrations will need (calendar, email…). They're stored inside the encrypted database and never shown again after saving; the list shows names only. Saving or deleting one needs your PIN.
+- **Log masking:** everything the backend prints or logs now passes through a filter. It masks session tokens, database keys, recovery keys, `token=`/`password=` pairs and every value in the secrets vault. A stray error message can't put a secret into a log file.
+- **Forget means forget:** **Settings → Privacy** now has **Forget all memories** and **Delete all chat history**. Both need your PIN. Deleted data is overwritten (SQLite `secure_delete`), removed from the search index, and the database is compacted so nothing lingers. A single "forget that…" in chat also overwrites what it deletes.
+- **Retention:** by default Sentinel keeps chats for 180 days and research history for 90 days. Change either in Settings, or choose "Forever". Remembered facts stay until you forget them, except ones saved with an expiry date. Old data is cleaned up at every unlock and every 6 hours while unlocked.
+- **Bug caught before it shipped:** the first version of the log filter rewrote log records in a way uvicorn's access log couldn't format. The error output filled a pipe and froze a test backend. Masking now happens on the final text instead, and a test covers it.
+- **Tests:** 287 pass. The quick check is green, and the server log shows no errors.
+- **Files:** `backend/app/core/secrets_store.py` (new), `redaction.py` (new), `retention.py` (new), `memory_service.py`, `app/db/database.py`, `app/main.py`, `tests/security/test_redaction.py` (new), `test_secrets_and_retention.py` (new), `frontend/src/components/Settings/SettingsPanel.tsx/.css`
+
+---
+
 ## 2026-09-27 · Independent security review: fixes before your first PIN
 **Branch:** `phase1/security`
 

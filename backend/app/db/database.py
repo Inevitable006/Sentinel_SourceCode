@@ -137,6 +137,7 @@ def SessionLocal():
 # Full-text index for personal memory (kept in sync by triggers) + a small metadata table.
 _SCHEMA_SETUP = [
     "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)",
+    "CREATE TABLE IF NOT EXISTS secrets (name TEXT PRIMARY KEY, value TEXT NOT NULL, created_at TEXT, updated_at TEXT)",
     """
     CREATE VIRTUAL TABLE IF NOT EXISTS fts_memory_items USING fts5(
         id UNINDEXED,
@@ -218,6 +219,11 @@ def open_for_vault(key: bytes, first_setup: bool = False, remove_test_rows: bool
         imported = import_research_history_json()
         if imported:
             report["research_entries_imported"] = imported
+        from app.core import retention, secrets_store
+        removed = retention.apply_retention()
+        if any(removed.values()):
+            report["retention_removed"] = removed
+        secrets_store.register_all_for_redaction()
     except Exception:
         close_database()
         raise

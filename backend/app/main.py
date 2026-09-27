@@ -25,6 +25,8 @@ async def lifespan(app: FastAPI):
     # ── Startup ──
     # The encrypted database is NOT opened here: it opens when the owner unlocks (app.core.vault).
     global _main_loop
+    from app.core import redaction
+    redaction.install()          # mask tokens, keys and stored secrets in every printed/logged line
     _main_loop = asyncio.get_running_loop()
     auto_lock_task = asyncio.create_task(_auto_lock_loop())
     # Start Resource Governor
@@ -83,12 +85,22 @@ vault.add_lock_listener(_close_chat_sockets)
 
 
 async def _auto_lock_loop():
+    import time as _time
+    last_retention = _time.monotonic()
     while True:
         await asyncio.sleep(30)
         try:
             vault.check_auto_lock()
         except Exception as e:
             print(f"[Vault] auto-lock check failed: {type(e).__name__}")
+        # Retention also runs every few hours while Sentinel stays unlocked (and at every unlock).
+        if vault.is_unlocked() and _time.monotonic() - last_retention > 6 * 3600:
+            last_retention = _time.monotonic()
+            try:
+                from app.core import retention
+                await asyncio.to_thread(retention.apply_retention)
+            except Exception as e:
+                print(f"[Retention] run failed: {type(e).__name__}")
 
 # Allow CORS for the React frontend
 app.add_middleware(
@@ -427,6 +439,70 @@ def delete_old_unencrypted_files(body: FreshPinBody, session_token: str = Depend
     they were moved into the encrypted database. Needs a fresh PIN (it deletes data)."""
     _require_fresh_pin(body.pin, "Enter your PIN to delete the old copies.")
     return db_store.delete_old_plaintext_files()
+
+# ── Secrets vault, deletion and retention (steps 1.5 / 1.6) ─────
+class SecretBody(BaseModel):
+    name: str
+    value: str
+    pin: str | None = None
+
+class RetentionBody(BaseModel):
+    chat_days: int
+    research_days: int
+    pin: str | None = None
+
+
+@app.get("/api/secrets")
+def list_secrets(session_token: str = Depends(verify_session_token)):
+    """Names only: stored values are never sent back to the UI."""
+    from app.core import secrets_store
+    return {"secrets": secrets_store.list_secrets()}
+
+@app.post("/api/secrets")
+def save_secret(body: SecretBody, session_token: str = Depends(verify_session_token)):
+    from app.core import secrets_store
+    _require_fresh_pin(body.pin, "Enter your PIN to save a secret.")
+    try:
+        secrets_store.set_secret(body.name, body.value)
+    except secrets_store.SecretError as e:
+        raise HTTPException(status_code=400, detail={"message": str(e)})
+    return {"status": "ok"}
+
+@app.post("/api/secrets/{name}/delete")
+def remove_secret(name: str, body: FreshPinBody, session_token: str = Depends(verify_session_token)):
+    from app.core import secrets_store
+    _require_fresh_pin(body.pin, "Enter your PIN to delete a secret.")
+    try:
+        return {"deleted": secrets_store.delete_secret(name)}
+    except secrets_store.SecretError as e:
+        raise HTTPException(status_code=400, detail={"message": str(e)})
+
+@app.post("/api/memory/forget-all")
+def forget_all_memories(body: FreshPinBody, session_token: str = Depends(verify_session_token)):
+    from app.core import retention
+    _require_fresh_pin(body.pin, "Enter your PIN to forget all memories.")
+    return {"forgotten": retention.forget_all_memories()}
+
+@app.post("/api/chats/delete-all")
+def delete_all_chats(body: FreshPinBody, session_token: str = Depends(verify_session_token)):
+    from app.core import retention
+    _require_fresh_pin(body.pin, "Enter your PIN to delete all chats.")
+    return {"deleted": retention.delete_all_chats()}
+
+@app.get("/api/retention")
+def get_retention(session_token: str = Depends(verify_session_token)):
+    from app.core import retention
+    return retention.get_settings()
+
+@app.post("/api/retention")
+def set_retention(body: RetentionBody, session_token: str = Depends(verify_session_token)):
+    from app.core import retention
+    _require_fresh_pin(body.pin, "Enter your PIN to change how long Sentinel keeps data.")
+    try:
+        settings_now = retention.set_settings(body.chat_days, body.research_days)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={"message": str(e)})
+    return {"settings": settings_now, "removed": retention.apply_retention()}
 
 @app.websocket("/ws/chat")
 async def chat_endpoint(websocket: WebSocket):

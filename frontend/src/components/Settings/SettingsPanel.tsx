@@ -21,6 +21,11 @@ const SettingsPanel: React.FC = () => {
   const [pinNew2, setPinNew2] = useState('');
   const [securityPin, setSecurityPin] = useState('');
   const [newRecoveryKey, setNewRecoveryKey] = useState('');
+  const [secretNames, setSecretNames] = useState<{ name: string; updated_at: string }[]>([]);
+  const [secretName, setSecretName] = useState('');
+  const [secretValue, setSecretValue] = useState('');
+  const [chatDays, setChatDays] = useState(180);
+  const [researchDays, setResearchDays] = useState(90);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
 
@@ -119,6 +124,64 @@ const SettingsPanel: React.FC = () => {
       const kept = r.kept.map(k => `${k.file} (kept: ${k.why})`).join('; ');
       say(`Deleted: ${r.deleted.length ? r.deleted.join(', ') : 'nothing'}.${kept ? ' ' + kept : ''}`);
       refreshUnlock();
+    } catch (err) { say(errText(err)); }
+  };
+
+  const refreshData = async () => {
+    try {
+      const [sec, ret] = await Promise.all([
+        apiGet<{ secrets: { name: string; updated_at: string }[] }>('/api/secrets'),
+        apiGet<{ retention_chat_days: number; retention_research_days: number }>('/api/retention'),
+      ]);
+      setSecretNames(sec.secrets);
+      setChatDays(ret.retention_chat_days);
+      setResearchDays(ret.retention_research_days);
+    } catch (err) { console.error(err); }
+  };
+  useEffect(() => { refreshData(); }, []);
+
+  const pinArg = () => ({ pin: securityPin || undefined });
+
+  const handleSaveSecret = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await apiPost('/api/secrets', { name: secretName, value: secretValue, ...pinArg() });
+      setSecretName(''); setSecretValue('');
+      say('Secret saved. It is stored encrypted and never shown again.');
+      refreshData();
+    } catch (err) { say(errText(err)); }
+  };
+
+  const handleDeleteSecret = async (name: string) => {
+    if (!window.confirm(`Delete the secret "${name}"?`)) return;
+    try {
+      await apiPost(`/api/secrets/${encodeURIComponent(name)}/delete`, pinArg());
+      say(`Secret "${name}" deleted.`);
+      refreshData();
+    } catch (err) { say(errText(err)); }
+  };
+
+  const handleForgetAll = async () => {
+    if (!window.confirm('Forget ALL remembered facts? This cannot be undone.')) return;
+    try {
+      const r = await apiPost<{ forgotten: number }>('/api/memory/forget-all', pinArg());
+      say(`Forgot ${r.forgotten} memories.`);
+    } catch (err) { say(errText(err)); }
+  };
+
+  const handleDeleteChats = async () => {
+    if (!window.confirm('Delete ALL chat history? This cannot be undone.')) return;
+    try {
+      const r = await apiPost<{ deleted: number }>('/api/chats/delete-all', pinArg());
+      say(`Deleted ${r.deleted} chat sessions.`);
+    } catch (err) { say(errText(err)); }
+  };
+
+  const handleSaveRetention = async () => {
+    try {
+      const r = await apiPost<{ removed: { chats: number; research: number } }>('/api/retention',
+        { chat_days: chatDays, research_days: researchDays, ...pinArg() });
+      say(`Retention saved. Removed now: ${r.removed.chats} old chats, ${r.removed.research} old research entries.`);
     } catch (err) { say(errText(err)); }
   };
 
@@ -287,6 +350,26 @@ const SettingsPanel: React.FC = () => {
           )}
         </div>
 
+        <div className="retention-grid">
+          <label className="settings-desc" htmlFor="keep-chats">Keep chats for</label>
+          <select id="keep-chats" className="settings-dropdown" value={chatDays} onChange={e => setChatDays(Number(e.target.value))}>
+            {[30, 90, 180, 365].map(d => <option key={d} value={d}>{d} days</option>)}
+            <option value={0}>Forever</option>
+          </select>
+          <label className="settings-desc" htmlFor="keep-research">Keep research history for</label>
+          <select id="keep-research" className="settings-dropdown" value={researchDays} onChange={e => setResearchDays(Number(e.target.value))}>
+            {[7, 30, 90, 365].map(d => <option key={d} value={d}>{d} days</option>)}
+            <option value={0}>Forever</option>
+          </select>
+          <button type="button" className="save-btn" onClick={handleSaveRetention}>Save retention</button>
+          <p className="settings-desc" style={{ fontSize: '0.8rem' }}>Remembered facts are kept until you forget them. Uses the PIN field in Security if needed.</p>
+        </div>
+
+        <div className="danger-row">
+          <button type="button" className="save-btn" style={{ backgroundColor: 'var(--accent-red)' }} onClick={handleForgetAll}>Forget all memories</button>
+          <button type="button" className="save-btn" style={{ backgroundColor: 'var(--accent-red)' }} onClick={handleDeleteChats}>Delete all chat history</button>
+        </div>
+
         <div style={{marginTop: '1rem'}}>
           <button className="save-btn" style={{backgroundColor: 'var(--accent-red)'}} onClick={handleClearMemory}>
             Clear Research History
@@ -320,6 +403,22 @@ const SettingsPanel: React.FC = () => {
           <input id="pin-new" type="password" placeholder={`New PIN (${unlock?.min_pin_length ?? 6}+ characters)`} autoComplete="new-password" className="settings-dropdown" value={pinNew} onChange={e => setPinNew(e.target.value)} />
           <input id="pin-new2" type="password" placeholder="New PIN again" autoComplete="new-password" className="settings-dropdown" value={pinNew2} onChange={e => setPinNew2(e.target.value)} />
           <button type="submit" className="save-btn" disabled={!pinCurrent || !pinNew}>Change PIN</button>
+        </form>
+
+        <form onSubmit={handleSaveSecret} className="secrets-box">
+          <span className="settings-desc">Secrets vault: API keys and passwords for future integrations. Stored encrypted and never shown again after saving.</span>
+          {secretNames.length > 0 && (
+            <ul className="secret-list">
+              {secretNames.map(sn => (
+                <li key={sn.name}><code>{sn.name}</code>
+                  <button type="button" className="link-btn" onClick={() => handleDeleteSecret(sn.name)}>Delete</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <input id="secret-name" placeholder="Name, e.g. calendar.api_key" className="settings-dropdown" value={secretName} onChange={e => setSecretName(e.target.value)} />
+          <input id="secret-value" type="password" placeholder="Value" autoComplete="off" className="settings-dropdown" value={secretValue} onChange={e => setSecretValue(e.target.value)} />
+          <button type="submit" className="save-btn" disabled={!secretName || !secretValue}>Save secret</button>
         </form>
 
         <div style={{ marginTop: '1rem', display: 'grid', gap: '0.5rem', maxWidth: '480px' }}>
