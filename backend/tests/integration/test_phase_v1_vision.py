@@ -21,7 +21,7 @@ def test_v1_image_ingestion_websocket(override_deps):
     client = TestClient(app)
 
     # Establish a websocket connection
-    with client.websocket_connect("/ws/chat?token=test_token") as websocket:
+    with client.websocket_connect("/ws/chat", subprotocols=["sentinel.v1", "test_token"]) as websocket:
         # Initial connect message from backend
         data = websocket.receive_json()
         assert data["type"] == "status"

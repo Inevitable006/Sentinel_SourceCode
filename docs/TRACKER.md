@@ -23,8 +23,8 @@ _Last updated: 2026-09-27_
 | 1.1 | Egress guard: allowlist, network-tool rule, offline switch, log of every call | ✅ | `app/core/egress.py` |
 | 1.1 | Tests run fully offline (socket guard) | ✅ | caught 5 tests doing real DNS lookups |
 | 1.1 | Electron blocks non-local requests; "online" indicator in the UI | ✅ | telemetry panel now live (was fake numbers) |
-| 1.2 | WebSocket session token out of the URL | 🔄 | |
-| 1.3 | Owner unlock: data key wrapped by PIN (Argon2id) + Windows login (DPAPI), recovery key | ⏳ | |
+| 1.2 | WebSocket session token out of the URL | ✅ | server log no longer contains it |
+| 1.3 | Owner unlock: data key wrapped by PIN (Argon2id) + Windows login (DPAPI), recovery key | 🔄 | |
 | 1.3 | Unlock screen, auto-lock when idle, PIN re-check before Tier-2+ actions | ⏳ | |
 | 1.4 | Encrypted memory DB + migration (backup → encrypt → verify) | ⏳ | |
 | 1.4 | Drop test-created rows during the migration (D2) | ⏳ | backup kept |

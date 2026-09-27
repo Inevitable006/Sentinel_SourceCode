@@ -54,8 +54,30 @@ def test_health_stays_public(client):
 def test_websocket_rejects_bad_token(client):
     from starlette.websockets import WebSocketDisconnect
     with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/ws/chat?token=wrong") as ws:
+        with client.websocket_connect("/ws/chat", subprotocols=["sentinel.v1", "wrong"]) as ws:
             ws.receive_json()
+
+
+def test_websocket_accepts_token_in_subprotocol_header(client):
+    with client.websocket_connect("/ws/chat", subprotocols=["sentinel.v1", TOKEN]) as ws:
+        assert ws.accepted_subprotocol == "sentinel.v1"
+        assert ws.receive_json()["type"] == "status"
+
+
+def test_websocket_ignores_token_in_url(client):
+    """A token in the URL would be written to logs, so the server must not accept it."""
+    from starlette.websockets import WebSocketDisconnect
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(f"/ws/chat?token={TOKEN}") as ws:
+            ws.receive_json()
+
+
+def test_websocket_rejects_missing_or_ambiguous_protocols(client):
+    from starlette.websockets import WebSocketDisconnect
+    for protocols in (["sentinel.v1"], [TOKEN], ["sentinel.v1", TOKEN, "extra"]):
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/chat", subprotocols=protocols) as ws:
+                ws.receive_json()
 
 
 def test_token_compare_helper():

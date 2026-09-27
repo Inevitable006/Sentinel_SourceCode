@@ -7,6 +7,17 @@ Newest first. Each entry says what changed, why it matters and how to check it.
 
 ---
 
+## 2026-09-27 · Step 1.2: session token out of URLs
+**Branch:** `phase1/security`
+
+- **What changed:** the chat connection between the window and the backend used to carry the per-boot session password in its web address (`/ws/chat?token=…`). The backend's log writes every address it sees, so the password landed in log files. It now travels in a connection header (the WebSocket "subprotocol"), and the address is just `/ws/chat`.
+- **Still refused before it opens:** a wrong or missing token still gets the connection refused before anything is exchanged. A token in the address is now ignored on purpose.
+- **How to check:** in `docs\runs\latest.txt` after `tools\check_quick.bat`, the backend log shows `"WebSocket /ws/chat" [accepted]` with no token.
+- **Tests:** 193 pass, including new ones for header-only tokens, tokens in the URL being ignored, and malformed headers. The real chat smoke test and the desktop app both connect the new way.
+- **Files:** `backend/app/main.py`, `frontend/src/components/Chat/ChatArea.tsx`, `tools/smoke_chat.py`, `tests/security/test_api_auth.py`, `tests/integration/test_chat_protocol.py`, `test_reliability.py`, `test_phase_v1_vision.py`, `tests/security/test_phase9_security.py`
+
+---
+
 ## 2026-09-27 · Step 1.1: the internet gate
 **Branch:** `phase1/security`
 

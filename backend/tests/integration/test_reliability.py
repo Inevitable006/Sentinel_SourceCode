@@ -27,15 +27,16 @@ class Disconnected(Exception):
 class Socket:
     """Minimal WebSocket double that feeds messages and records sends."""
 
-    headers = {"origin": "http://localhost:5173"}
-    query_params = {"token": "test-token"}
+    # The token arrives as a WebSocket subprotocol (header), not in the URL.
+    headers = {"origin": "http://localhost:5173", "sec-websocket-protocol": "sentinel.v1, test-token"}
+    query_params = {}
 
     def __init__(self, messages=None):
         self.sent = []
         self._messages = list(messages or [])
         self._idx = 0
 
-    async def accept(self):
+    async def accept(self, subprotocol=None):
         pass
 
     async def send_json(self, payload):

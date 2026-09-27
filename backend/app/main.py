@@ -238,15 +238,21 @@ async def chat_endpoint(websocket: WebSocket):
     if origin not in ["file://", "http://localhost:5173", "app://.", ""]:
         pass  # Rely on session token for security
 
-    # Token validation
-    token = websocket.query_params.get("token")
+    # Token validation. The UI offers the WebSocket subprotocols ["sentinel.v1", <session token>],
+    # so the token travels in the Sec-WebSocket-Protocol header and never in the URL (uvicorn
+    # writes URLs to its log). A token in the query string is ignored on purpose.
+    offered = [p.strip() for p in websocket.headers.get("sec-websocket-protocol", "").split(",") if p.strip()]
+    token = None
+    if "sentinel.v1" in offered:
+        others = [p for p in offered if p != "sentinel.v1"]
+        token = others[0] if len(others) == 1 else None
     expected_token = os.environ.get("SENTINEL_SESSION_TOKEN")
 
     if not _token_matches(token, expected_token):
         await websocket.close(code=1008, reason="Unauthorized")
         return
 
-    await websocket.accept()
+    await websocket.accept(subprotocol="sentinel.v1")
 
     # ── Per-connection state ──────────────────────────────────────
     cancel_event = asyncio.Event()

@@ -109,7 +109,8 @@ const ChatArea: React.FC = () => {
 
       if (disposed) return;
       authRef.current = { port, token };
-      ws = new WebSocket(`ws://127.0.0.1:${port}/ws/chat?token=${encodeURIComponent(token)}`);
+      // The session token goes in the subprotocol header, never in the URL (URLs end up in logs).
+      ws = new WebSocket(`ws://127.0.0.1:${port}/ws/chat`, ['sentinel.v1', token]);
 
       ws.onopen = () => {
         attempt = 0;

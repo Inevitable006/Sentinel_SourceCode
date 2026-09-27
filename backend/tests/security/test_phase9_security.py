@@ -731,7 +731,7 @@ def test_invariant_21():
             return
 
         # 1. Authenticated WebSocket connection proving no model load occurs
-        ws = websocket.create_connection(f"ws://127.0.0.1:{test_port}/ws/chat?token={test_session_token}", timeout=2)
+        ws = websocket.create_connection(f"ws://127.0.0.1:{test_port}/ws/chat", subprotocols=["sentinel.v1", test_session_token], timeout=2)
         ws.send(json.dumps({"text": "Hello"}))
         
         found_msg = False

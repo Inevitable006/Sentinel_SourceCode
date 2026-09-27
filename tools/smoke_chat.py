@@ -64,7 +64,7 @@ def main():
         print("health after load:", http("GET", "/health", auth=False)[1])
 
         import websocket  # websocket-client
-        ws = websocket.create_connection(f"ws://127.0.0.1:{PORT}/ws/chat?token={TOKEN}", timeout=180)
+        ws = websocket.create_connection(f"ws://127.0.0.1:{PORT}/ws/chat", subprotocols=["sentinel.v1", TOKEN], timeout=180)
         prompt = "In one short sentence, say hello and tell me your name."
         ws.send(json.dumps({"text": prompt, "request_id": "smoke-1"}))
         reply, first_tok, t_start, n = "", None, time.time(), 0
