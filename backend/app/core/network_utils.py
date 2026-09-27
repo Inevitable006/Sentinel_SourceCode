@@ -4,6 +4,8 @@ import urllib.parse
 import httpx
 from typing import Optional
 
+from app.core.egress import egress_guard
+
 def resolve_and_validate_url(url: str) -> tuple[bool, Optional[str], Optional[str]]:
     """
     Robust SSRF validation.
@@ -64,7 +66,7 @@ def resolve_and_validate_url(url: str) -> tuple[bool, Optional[str], Optional[st
 
 class SafeAsyncClient(httpx.AsyncClient):
     """
-    An async client that enforces strict SSRF protections and DNS pinning.
+    An async client that enforces the egress guard (app.core.egress) and strict SSRF protections.
     It overrides the request method to validate and pin the IP before fetching.
     """
     def __init__(self, *args, **kwargs):
@@ -81,8 +83,11 @@ class SafeAsyncClient(httpx.AsyncClient):
         current_url = url
         
         for attempt in range(max_redirects + 1):
+            # Egress guard first: a blocked host is never even resolved. Raises EgressBlocked.
+            rec = egress_guard.check(method, urllib.parse.urlparse(current_url).hostname)
             is_safe, pinned_ip, error = resolve_and_validate_url(current_url)
             if not is_safe:
+                egress_guard.record_result(rec, blocked_reason=f"SSRF protection: {error}")
                 raise ValueError(f"SSRF blocked: {error}")
 
             parsed = urllib.parse.urlparse(current_url)
@@ -113,8 +118,13 @@ class SafeAsyncClient(httpx.AsyncClient):
             # So we will revert to connecting to the original URL, but ONLY after resolving it 
             # and ensuring it's safe.
             
-            response = await self.request(method, current_url, **kwargs)
-            
+            try:
+                response = await self.request(method, current_url, **kwargs)
+            except BaseException as e:   # includes cancellation
+                egress_guard.record_result(rec, error=type(e).__name__)
+                raise
+            egress_guard.record_result(rec, status=response.status_code, bytes_in=len(response.content))
+
             if response.status_code in (301, 302, 303, 307, 308):
                 if attempt == max_redirects:
                     raise ValueError("Too many redirects")

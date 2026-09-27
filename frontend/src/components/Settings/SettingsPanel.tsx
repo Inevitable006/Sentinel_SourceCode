@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './SettingsPanel.css';
+import { apiGet, apiPost, timeAgo, type EgressEvent, type EgressStatus } from '../../lib/backend';
 
 interface ModelProfile {
   id: string;
@@ -12,6 +13,8 @@ const SettingsPanel: React.FC = () => {
   const [models, setModels] = useState<ModelProfile[]>([]);
   const [activeModel, setActiveModel] = useState<string>('');
   const [localOnly, setLocalOnly] = useState(false);
+  const [offline, setOffline] = useState(false);
+  const [netEvents, setNetEvents] = useState<EgressEvent[]>([]);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
 
@@ -56,6 +59,39 @@ const SettingsPanel: React.FC = () => {
     
     fetchSettings();
   }, []);
+
+  // Internet access (egress guard): current mode + the most recent decisions.
+  const refreshNetwork = async () => {
+    try {
+      const [st, log] = await Promise.all([
+        apiGet<EgressStatus>('/api/egress/status'),
+        apiGet<{ events: EgressEvent[] }>('/api/egress/log?limit=8'),
+      ]);
+      setOffline(st.offline);
+      setNetEvents(log.events);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    refreshNetwork();
+    const id = window.setInterval(refreshNetwork, 10000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const handleOfflineChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const enabled = e.target.checked;
+    try {
+      const st = await apiPost<EgressStatus>('/api/egress/offline', { enabled });
+      setOffline(st.offline);
+      setStatus(st.offline ? 'Offline mode on: nothing leaves this PC.' : 'Offline mode off: approved tools may use the internet.');
+      setTimeout(() => setStatus(''), 3000);
+    } catch (err) {
+      console.error(err);
+      setStatus('Could not change Offline mode.');
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -109,7 +145,7 @@ const SettingsPanel: React.FC = () => {
   };
 
   const handleClearMemory = async () => {
-    if (!window.confirm("Are you sure you want to permanently clear all personal memory?")) return;
+    if (!window.confirm("Clear your web research history? This cannot be undone.")) return;
     
     try {
       const { port, token } = await getAuthInfo();
@@ -118,7 +154,7 @@ const SettingsPanel: React.FC = () => {
         headers: { 'X-Sentinel-Session': token }
       });
       if (res.ok) {
-        setStatus('Personal memory cleared.');
+        setStatus('Research history cleared.');
         setTimeout(() => setStatus(''), 3000);
       }
     } catch (e) {
@@ -171,12 +207,41 @@ const SettingsPanel: React.FC = () => {
           <span className="toggle-label">Strict Local-Only Mode (Disables Web/Network Skills)</span>
         </label>
         
+        <label className="settings-toggle" style={{marginTop: '0.75rem'}}>
+          <input
+            id="offline-mode"
+            type="checkbox"
+            checked={offline}
+            onChange={handleOfflineChange}
+          />
+          <span className="toggle-label">Offline mode: block all internet access (web search, market data, everything)</span>
+        </label>
+
+        <div className="net-activity">
+          <p className="settings-desc" style={{marginTop: '1rem', marginBottom: '0.4rem'}}>Recent internet activity</p>
+          {netEvents.length === 0 ? (
+            <p className="settings-desc" style={{fontSize: '0.8rem'}}>Nothing has gone online this session.</p>
+          ) : (
+            <ul className="net-activity-list">
+              {netEvents.map((ev, i) => (
+                <li key={`${ev.ts}-${i}`} className={ev.decision}>
+                  <span className="net-host">{ev.host || '(unknown host)'}</span>
+                  <span className="net-meta">
+                    {ev.decision === 'blocked' ? 'Blocked' : `Allowed${ev.status ? ` · HTTP ${ev.status}` : ''}`}
+                    {ev.tool ? ` · ${ev.tool}` : ''} · {timeAgo(ev.ts)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         <div style={{marginTop: '1rem'}}>
           <button className="save-btn" style={{backgroundColor: 'var(--accent-red)'}} onClick={handleClearMemory}>
-            Clear Personal Memory
+            Clear Research History
           </button>
           <p className="settings-desc" style={{marginTop: '0.5rem', fontSize: '0.8rem'}}>
-            Permanently deletes all explicitly remembered facts.
+            Deletes the list of web searches Sentinel has made. It does not touch remembered facts.
           </p>
         </div>
       </div>

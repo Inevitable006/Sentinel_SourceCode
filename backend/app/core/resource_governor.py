@@ -131,10 +131,13 @@ class ResourceGovernor:
             self.high_load_count = 0
 
     def get_status(self):
+        vm = psutil.virtual_memory()
         return {
             "state": self.state.value,
             "cpu_percent": psutil.cpu_percent(),
-            "ram_percent": psutil.virtual_memory().percent,
+            "ram_percent": vm.percent,
+            "ram_used_gb": round((vm.total - vm.available) / 1073741824, 1),
+            "ram_total_gb": round(vm.total / 1073741824, 1),
             "manual_override": self.manual_override,
             "gpu": gpu_monitor.peek(),
         }

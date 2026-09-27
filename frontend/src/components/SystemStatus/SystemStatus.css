@@ -111,3 +111,12 @@
 
 .progress-fill.warning { background: #fbbf24; }
 .progress-fill.danger { background: #f87171; }
+
+/* Live telemetry additions */
+.value.muted { color: var(--text-muted); }
+.privacy-sub { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.35rem; line-height: 1.4; overflow-wrap: anywhere; }
+.privacy-sub strong { color: var(--text-primary); font-weight: 600; }
+.status-offline-note {
+  margin: 0 0 0.75rem; padding: 0.5rem 0.75rem; font-size: 0.8rem;
+  color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.35); border-radius: var(--radius-sm);
+}

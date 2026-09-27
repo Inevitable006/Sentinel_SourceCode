@@ -6,6 +6,7 @@ import time
 from app.core.research_service import research_service
 from app.core.network_utils import resolve_and_validate_url, SafeAsyncClient
 from app.core.request_context import request_context
+from app.core.egress import tool_context
 import unittest.mock
 
 def test_ssrf():
@@ -52,7 +53,9 @@ def test_network_cancellation():
         # Wrapping in a task to cancel it
         async def do_fetch():
             # Mocking resolve_and_validate_url since the hanging transport intercepts everything anyway
-            with unittest.mock.patch('app.core.network_utils.resolve_and_validate_url', return_value=(True, '1.1.1.1', None)):
+            # Runs as a network tool would (the egress guard only lets approved network tools out).
+            with unittest.mock.patch('app.core.network_utils.resolve_and_validate_url', return_value=(True, '1.1.1.1', None)), \
+                 tool_context("fetch_url", network_allowed=True):
                 return await client.safe_request("GET", "https://example.com")
                 
         task = asyncio.create_task(do_fetch())
@@ -81,14 +84,33 @@ def test_network_cancellation():
             
     asyncio.run(run_cancellation_test())
 
+_DDG_HTML = (
+    '<div class="result"><a class="result__url" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fapple">'
+    'example.com/apple</a><a class="result__snippet" href="#">Apple stock <b>rose</b> 2% today.</a></div>'
+)
+
+
 def test_valid_search():
-    print("\nTesting valid web search (DDGS)...")
-    res = research_service.search("Apple stock price today")
-    if "Search Results for" not in res or "Source:" not in res or "Snippet:" not in res:
-        print(f"FAILED Response: {res}")
-        assert False, "Missing expected text in response"
-    print("PASS: Valid search returned content")
-    print(f"Length of response: {len(res)} characters")
+    """Search parsing and formatting, against a canned DuckDuckGo page (tests never use the internet)."""
+    print("\nTesting web search parsing (mocked DuckDuckGo)...")
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        return httpx.Response(200, text=_DDG_HTML)
+
+    def client_factory(*args, **kwargs):
+        return SafeAsyncClient(transport=httpx.MockTransport(handler))
+
+    with unittest.mock.patch("app.core.research_service.SafeAsyncClient", side_effect=client_factory), \
+         unittest.mock.patch("app.core.network_utils.resolve_and_validate_url", return_value=(True, "93.184.215.14", None)):
+        res = research_service.search("Apple stock & price #today")
+    assert "Search Results for" in res and "Source:" in res and "Snippet:" in res, res
+    assert "https://example.com/apple" in res and "Apple stock rose 2% today." in res
+    # The query is URL-encoded: '&' and '#' no longer cut the search short.
+    assert "q=Apple+stock+%26+price+%23today" in seen["url"], seen["url"]
+    print("PASS: Search parsed and formatted the canned results")
+
 
 def test_local_mode():
     print("\nTesting Local-Only Mode...")

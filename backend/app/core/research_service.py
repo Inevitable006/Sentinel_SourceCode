@@ -2,6 +2,7 @@ import json
 import time
 import asyncio
 import re
+import urllib.parse
 from app.core.paths import SENTINEL_DATA_DIR
 from app.core.request_context import request_context
 from app.core.network_utils import SafeAsyncClient
@@ -43,7 +44,7 @@ class ResearchService:
         # This function only queries the fixed trusted search endpoint and returns metadata/snippets.
         
         try:
-            url = f"https://html.duckduckgo.com/html/?q={query}"
+            url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
             async with SafeAsyncClient() as client:
                 response = await client.safe_request("GET", url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=5.0)
             
@@ -64,7 +65,6 @@ class ResearchService:
                 
                 # duckduckgo redirects via /l/?uddg=...
                 if "uddg=" in url_raw:
-                    import urllib.parse
                     parsed = urllib.parse.parse_qs(urllib.parse.urlparse(url_raw).query)
                     if "uddg" in parsed:
                         url_raw = parsed["uddg"][0]

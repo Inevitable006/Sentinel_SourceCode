@@ -20,16 +20,18 @@ _Last updated: 2026-09-27_
 | 1.0 | Setup: watcher, `AGENTS.md`, tracker, change notes | ✅ | commit 53d2af0 |
 | 1.0 | Governor reads the GPU through NVML, off the event loop | ✅ | 174 tests pass, real RTX 3050 read |
 | 1.0 | Dependency sync on Windows (`deps` check) | ✅ | also `pytest` + `probe` checks |
-| 1.1 | Egress guard: allowlist, approval for new sites, log of every call | 🔄 | |
-| 1.1 | Tests run fully offline (socket guard) | ⏳ | |
-| 1.1 | Electron blocks non-local requests; "online" indicator in the UI | ⏳ | |
-| 1.2 | WebSocket session token out of the URL | ⏳ | |
+| 1.1 | Egress guard: allowlist, network-tool rule, offline switch, log of every call | ✅ | `app/core/egress.py` |
+| 1.1 | Tests run fully offline (socket guard) | ✅ | caught 5 tests doing real DNS lookups |
+| 1.1 | Electron blocks non-local requests; "online" indicator in the UI | ✅ | telemetry panel now live (was fake numbers) |
+| 1.2 | WebSocket session token out of the URL | 🔄 | |
 | 1.3 | Owner unlock: data key wrapped by PIN (Argon2id) + Windows login (DPAPI), recovery key | ⏳ | |
 | 1.3 | Unlock screen, auto-lock when idle, PIN re-check before Tier-2+ actions | ⏳ | |
 | 1.4 | Encrypted memory DB + migration (backup → encrypt → verify) | ⏳ | |
 | 1.4 | Drop test-created rows during the migration (D2) | ⏳ | backup kept |
 | 1.5 | Secrets vault inside the encrypted store; log redaction | ⏳ | |
 | 1.6 | Real deletion + retention defaults | ⏳ | |
+| 1.6 | Real "Forget all memories" in Settings | ⏳ | old button only cleared research history (relabelled in 1.1) |
+| 1.6 | Move research history (`research_history.json`, plaintext) into the encrypted store | ⏳ | |
 | 1.x | Full Windows check + independent security review | ⏳ | |
 
 ## Later phases

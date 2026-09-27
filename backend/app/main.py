@@ -212,6 +212,25 @@ def set_research_mode(update: LocalModeUpdate, session_token: str = Depends(veri
     research_service.set_local_mode(update.local_only)
     return {"status": "success", "local_only": update.local_only}
 
+# ── Egress guard (what went online) ─────────────────────────────
+from app.core.egress import egress_guard
+
+class OfflineModeUpdate(BaseModel):
+    enabled: bool
+
+@app.get("/api/egress/status")
+def get_egress_status(session_token: str = Depends(verify_session_token)):
+    return egress_guard.status()
+
+@app.get("/api/egress/log")
+def get_egress_log(limit: int = 50, session_token: str = Depends(verify_session_token)):
+    return {"events": egress_guard.recent(max(1, min(limit, 200)))}
+
+@app.post("/api/egress/offline")
+def set_offline_mode(update: OfflineModeUpdate, session_token: str = Depends(verify_session_token)):
+    egress_guard.set_offline(update.enabled)
+    return egress_guard.status()
+
 @app.websocket("/ws/chat")
 async def chat_endpoint(websocket: WebSocket):
     # Origin validation

@@ -3,6 +3,7 @@ from app.core.tool_registry import tool_registry, ToolDefinition, ToolSchema, Ri
 from app.core.policy_engine import policy_engine, PolicyDecision
 from app.core.token_service import token_service
 from app.core.audit_logger import audit_logger
+from app.core.egress import tool_context
 import traceback
 import psutil
 import time
@@ -74,7 +75,10 @@ class SecureRunner:
             if "request_id" in sig.parameters:
                 exec_args["request_id"] = request_id
                 
-            result = tool_def.executor(**exec_args)
+            # The egress guard lets a tool reach the internet only if it declared network_access.
+            network_ok = "network_access" in (tool_def.tool_schema.required_capabilities or [])
+            with tool_context(tool_name, network_ok):
+                result = tool_def.executor(**exec_args)
             duration = time.time() - start_time
             
             # Truncate large outputs to prevent context overflow (10KB limit)

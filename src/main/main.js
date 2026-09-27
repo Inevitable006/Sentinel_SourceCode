@@ -2,7 +2,7 @@
 // Required for downloading AI models from HuggingFace behind corporate firewalls
 // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // REMOVED for Security
 
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, dialog, session } = require('electron');
 const path = require('path');
 const { fileURLToPath } = require('url');
 
@@ -352,8 +352,28 @@ ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized());
 // renderer but unused by the UI. They are gone; the UI talks only to the
 // Python backend, which enforces policy, confirmation and audit.
 
+// ─── Security: local-only network for the app window ────────────
+// Defense in depth for the egress policy: the renderer may only load its own files and talk
+// to local hosts (the Python backend; the Vite dev server in development). Every other
+// request is cancelled and logged. The backend has its own egress guard for tools.
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+function isLocalRequestUrl(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch { return false; }
+  if (['file:', 'devtools:', 'data:', 'blob:'].includes(u.protocol)) return true;
+  return ['http:', 'https:', 'ws:', 'wss:'].includes(u.protocol) && LOCAL_HOSTS.has(u.hostname);
+}
+function installLocalOnlyRequestFilter() {
+  session.defaultSession.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
+    if (isLocalRequestUrl(details.url)) return callback({});
+    logger.warn('security', 'Blocked non-local request from the app window', { url: String(details.url).slice(0, 200) });
+    callback({ cancel: true });
+  });
+}
+
 // ─── App Lifecycle ──────────────────────────────────────────────
 app.whenReady().then(() => {
+  installLocalOnlyRequestFilter();
   bootSentinel().catch(err => {
     console.error('[SENTINEL] Boot failed:', err);
     // Last resort — create window anyway

@@ -7,6 +7,22 @@ Newest first. Each entry says what changed, why it matters and how to check it.
 
 ---
 
+## 2026-09-27 · Step 1.1: the internet gate
+**Branch:** `phase1/security`
+
+- **What changed:** every internet request from Sentinel now goes through one gate, the egress guard. A request is allowed only if its site is on a short allowlist (DuckDuckGo search, Yahoo market data) or it comes from a tool that declared it needs the internet. Those tools already pass the policy check and, for higher-risk ones, your confirmation. Everything else is blocked, and blocked sites are not even looked up in DNS.
+- **Offline mode:** a new switch in **Settings → Privacy & Constraints** blocks all internet access, web search included. It's remembered across restarts. If the setting file is ever damaged, Sentinel stays offline rather than guessing.
+- **What went online:** every decision (allowed or blocked) is written to `%APPDATA%\sentinel\logs\egress.jsonl`, and the latest ones appear in Settings. The log keeps only the site, tool, time, status and size, never the page path or what you searched for.
+- **Desktop app:** the Electron window itself can now only talk to your PC (the local backend and its own files). Any other request is cancelled and logged. This is a second layer on top of the existing Content Security Policy.
+- **Live telemetry:** the right-hand panel used to show made-up numbers ("Qwen-1.5B", "4.2 / 16.0 GB", "21 ms"). It now shows real CPU, RAM, GPU, model, engine and internet status from the backend every 5 seconds, and says "Backend not reachable" instead of inventing values.
+- **Honest labels:** the Settings button called "Clear Personal Memory" only ever cleared research history, so it's now called "Clear Research History". A real "forget all memories" comes in step 1.6.
+- **Bug fixed:** web searches containing `&` or `#` were cut short because the query wasn't URL-encoded.
+- **Tests can't use the internet any more:** any test that tries is stopped. This caught 5 tests that had been quietly doing real DNS lookups; they now use a fake answer.
+- **Tests:** 190 backend tests pass, the UI builds, and the desktop app starts cleanly with the gate on.
+- **Files:** `backend/app/core/egress.py` (new), `network_utils.py`, `secure_runner.py`, `research_service.py`, `resource_governor.py`, `main.py` (`/api/egress/status`, `/api/egress/log`, `/api/egress/offline`), `tests/conftest.py`, `tests/security/test_egress.py` (new), research/finance/web tests, `src/main/main.js`, `frontend/src/lib/backend.ts` (new), `SystemStatus.tsx/.css`, `SettingsPanel.tsx/.css`
+
+---
+
 ## 2026-09-27 · Step 1.0: GPU readings without stalls
 **Branch:** `phase1/security`
 

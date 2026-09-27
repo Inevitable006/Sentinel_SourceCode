@@ -1,3 +1,5 @@
+import socket
+from app.core.egress import tool_context
 import pytest
 import asyncio
 from unittest.mock import patch, MagicMock
@@ -7,6 +9,16 @@ from skills.web_research import fetch_url, search_web
 
 
 class TestWebResearch:
+
+    @pytest.fixture(autouse=True)
+    def _as_approved_network_tool(self):
+        """Runs like the real fetch_url tool (SecureRunner marks it as a network tool) and fakes a
+        public DNS answer, so the real SSRF checks run without touching the internet."""
+        fake = lambda host, port, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.215.14", port))]
+        with patch("app.core.network_utils.socket.getaddrinfo", side_effect=fake), \
+             tool_context("fetch_url", network_allowed=True):
+            yield
+
 
     @patch("app.core.network_utils.httpx.AsyncClient.request")
     def test_fetch_url_success(self, mock_request):
