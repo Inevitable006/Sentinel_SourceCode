@@ -58,6 +58,11 @@ def main():
         except urllib.error.HTTPError as e:
             print(f"governor status without token -> HTTP {e.code} (expected 401/422)")
 
+        st, u = http("GET", "/api/unlock/status")
+        print("unlock state before setup:", u.get("state"))
+        st, r = http("POST", "/api/unlock/setup", {"pin": secrets.token_hex(8)}, timeout=60)
+        print("owner setup:", "ok (recovery key issued)" if st == 200 and r.get("recovery_key") else r)
+
         t0 = time.time()
         st, r = http("POST", "/api/models/load", timeout=300)
         print(f"model load: {r} in {time.time() - t0:.1f}s")

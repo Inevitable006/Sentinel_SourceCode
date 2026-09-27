@@ -1,5 +1,6 @@
 import React from 'react';
-import { Settings, Database, Home, Shield } from 'lucide-react';
+import { Settings, Database, Home, Shield, Lock } from 'lucide-react';
+import { apiPost, notifyLockStateChanged } from '../../lib/backend';
 import './Sidebar.css';
 
 interface SidebarProps {
@@ -46,10 +47,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
       </nav>
 
       <div className="sidebar-footer">
-        <div className="status-indicator">
-          <div className="pulse-dot active"></div>
-          <span>System Online</span>
-        </div>
+        <button
+          type="button"
+          className="lock-button"
+          title="Lock Sentinel: closes the encrypted database until you enter your PIN"
+          onClick={async () => {
+            try { await apiPost('/api/lock'); } catch { /* the gate re-checks either way */ }
+            notifyLockStateChanged();
+          }}
+        >
+          <Lock size={16} />
+          <span>Lock Sentinel</span>
+        </button>
       </div>
     </aside>
   );

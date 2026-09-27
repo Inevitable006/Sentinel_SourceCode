@@ -12,7 +12,7 @@ _Last updated: 2026-09-27_
 | # | What | Why | Status |
 |---|---|---|---|
 | O1 | Make the GitHub repo `Inevitable006/Sentinel_SourceCode` private: repo **Settings → General → Danger Zone → Change visibility → Private** | The project is personal, but anyone can read the code today. GitHub asks for your password, so only you can do it. | ⛔ open |
-| O2 | Choose your PIN when Sentinel asks for it. Type it only into Sentinel, never into a chat. | Unlock and encryption | 💤 end of Phase 1 |
+| O2 | Open Sentinel and choose your PIN (6+ characters). Save the recovery key it shows (paper or password manager). Type the PIN only into Sentinel, never into a chat. | Encrypts your data and moves the old database into the encrypted one | ⏳ after the security review |
 
 ## Phase 1: Security foundation (branch `phase1/security`)
 | Step | Task | Status | Notes |
@@ -24,15 +24,15 @@ _Last updated: 2026-09-27_
 | 1.1 | Tests run fully offline (socket guard) | ✅ | caught 5 tests doing real DNS lookups |
 | 1.1 | Electron blocks non-local requests; "online" indicator in the UI | ✅ | telemetry panel now live (was fake numbers) |
 | 1.2 | WebSocket session token out of the URL | ✅ | server log no longer contains it |
-| 1.3 | Owner unlock: data key wrapped by PIN (Argon2id) + Windows login (DPAPI), recovery key | 🔄 | |
-| 1.3 | Unlock screen, auto-lock when idle, PIN re-check before Tier-2+ actions | ⏳ | |
-| 1.4 | Encrypted memory DB + migration (backup → encrypt → verify) | ⏳ | |
-| 1.4 | Drop test-created rows during the migration (D2) | ⏳ | backup kept |
+| 1.3 | Owner unlock: data key wrapped by PIN (Argon2id) + Windows login (DPAPI), recovery key | ✅ | `app/core/vault.py`, `dpapi.py` |
+| 1.3 | Unlock screen, auto-lock when idle, PIN re-check before Tier-3+ actions | ✅ | D6: Tier 3+, 5-minute window |
+| 1.4 | Encrypted memory DB + migration (backup → encrypt → verify) | ✅ | SQLCipher; old file kept until you delete it |
+| 1.4 | Drop test-created rows during the migration (D2) | ✅ | exact-match rules only |
 | 1.5 | Secrets vault inside the encrypted store; log redaction | ⏳ | |
 | 1.6 | Real deletion + retention defaults | ⏳ | |
 | 1.6 | Real "Forget all memories" in Settings | ⏳ | old button only cleared research history (relabelled in 1.1) |
 | 1.6 | Move research history (`research_history.json`, plaintext) into the encrypted store | ⏳ | |
-| 1.x | Full Windows check + independent security review | ⏳ | |
+| 1.x | Full Windows check + independent security review | 🔄 | |
 
 ## Later phases
 | Phase | Scope | Status |

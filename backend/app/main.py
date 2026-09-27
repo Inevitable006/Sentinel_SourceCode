@@ -8,7 +8,11 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.paths import ensure_paths
 from app.core.ai_service import ai_service
-from app.db.database import engine, Base, SessionLocal, init_db
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from app.db.database import SessionLocal, DatabaseLocked
+from app.db import database as db_store
+from app.core.vault import vault, VaultError, WrongSecret, WeakPin, InvalidState, RateLimited
 from app.core.memory_service import memory_service
 from app.core.resource_governor import resource_governor
 from app.core.vision_service import vision_service
@@ -19,8 +23,10 @@ ensure_paths()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ──
-    # Create DB tables + memory full-text index (idempotent)
-    init_db()
+    # The encrypted database is NOT opened here: it opens when the owner unlocks (app.core.vault).
+    global _main_loop
+    _main_loop = asyncio.get_running_loop()
+    auto_lock_task = asyncio.create_task(_auto_lock_loop())
     # Start Resource Governor
     resource_governor.start()
     # Phase 10: Initialize Skill System
@@ -31,10 +37,58 @@ async def lifespan(app: FastAPI):
         print(f"[Startup] Skill loader failed (non-fatal): {e}")
     yield
     # ── Shutdown ──
+    auto_lock_task.cancel()
     resource_governor.stop()
+    vault.lock("shutdown")
 
 
 app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)
+
+
+@app.exception_handler(DatabaseLocked)
+async def _database_locked_handler(request, exc):
+    return JSONResponse(status_code=423, content={"detail": "Sentinel is locked. Unlock it first."})
+
+
+# Open chat connections. When Sentinel locks, they are told and closed (their database
+# connections are already closed by then).
+CHAT_SOCKETS: set = set()
+_main_loop = None
+
+
+def _close_chat_sockets(reason: str) -> None:
+    loop = _main_loop
+    if loop is None or not CHAT_SOCKETS:
+        return
+
+    async def _close_all():
+        for ws in list(CHAT_SOCKETS):
+            try:
+                await ws.send_json({"type": "locked", "reason": reason, "message": "Sentinel locked. Unlock to continue."})
+                await ws.close(code=4423)
+            except Exception:
+                pass
+
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if running is loop:
+        loop.create_task(_close_all())
+    else:
+        asyncio.run_coroutine_threadsafe(_close_all(), loop)
+
+
+vault.add_lock_listener(_close_chat_sockets)
+
+
+async def _auto_lock_loop():
+    while True:
+        await asyncio.sleep(30)
+        try:
+            vault.check_auto_lock()
+        except Exception as e:
+            print(f"[Vault] auto-lock check failed: {type(e).__name__}")
 
 # Allow CORS for the React frontend
 app.add_middleware(
@@ -133,11 +187,27 @@ class ToolConfirmation(BaseModel):
     tool_name: str
     args: dict
     session_id: str
+    pin: str | None = None
 
 
 @app.post("/api/tools/confirm")
 def confirm_tool_execution(confirmation: ToolConfirmation, session_token: str = Depends(verify_session_token)):
     from app.core.secure_runner import secure_runner
+    from app.core.tool_registry import tool_registry
+    vault.touch()
+    # High-risk actions (Tier 3+: change files, launch programs, delete) need a PIN typed in the
+    # last few minutes, so someone at an unlocked PC can't approve them on your behalf.
+    tool_def = tool_registry.get_tool(confirmation.tool_name)
+    tier = int(tool_def.tool_schema.risk_tier.value) if tool_def else 4
+    if vault.needs_pin_for_tier(tier):
+        if not confirmation.pin:
+            raise HTTPException(status_code=403, detail={
+                "code": "pin_required", "tier": tier,
+                "message": "Enter your PIN to approve this action."})
+        try:
+            vault.verify_pin(confirmation.pin)
+        except VaultError as e:
+            _raise_vault_error(e)
     result = secure_runner.execute(
         tool_name=confirmation.tool_name,
         args=confirmation.args,
@@ -180,6 +250,7 @@ def get_settings(session_token: str = Depends(verify_session_token)):
 
 @app.post("/settings")
 def update_settings(update: SettingsUpdate, session_token: str = Depends(verify_session_token)):
+    vault.touch()
     db = SessionLocal()
     try:
         setting = db.query(AppSettings).first()
@@ -231,6 +302,104 @@ def set_offline_mode(update: OfflineModeUpdate, session_token: str = Depends(ver
     egress_guard.set_offline(update.enabled)
     return egress_guard.status()
 
+# ── Owner unlock (app.core.vault) ────────────────────────────────
+class PinBody(BaseModel):
+    pin: str
+
+class RecoverBody(BaseModel):
+    recovery_key: str
+    new_pin: str
+
+class ChangePinBody(BaseModel):
+    current_pin: str
+    new_pin: str
+
+class AutoLockBody(BaseModel):
+    minutes: int
+
+class DeleteOldDbBody(BaseModel):
+    pin: str | None = None
+
+
+def _raise_vault_error(e: VaultError):
+    if isinstance(e, RateLimited):
+        raise HTTPException(status_code=429, detail={"message": str(e), "retry_after": e.retry_after})
+    if isinstance(e, WrongSecret):
+        raise HTTPException(status_code=401, detail={"message": str(e)})
+    if isinstance(e, InvalidState):
+        raise HTTPException(status_code=409, detail={"message": str(e)})
+    raise HTTPException(status_code=400, detail={"message": str(e)})
+
+
+@app.get("/api/unlock/status")
+def unlock_status(session_token: str = Depends(verify_session_token)):
+    st = vault.status()
+    st["old_unencrypted_db"] = db_store.legacy_db_present()
+    return st
+
+@app.post("/api/unlock/setup")
+def unlock_setup(body: PinBody, session_token: str = Depends(verify_session_token)):
+    try:
+        return vault.setup(body.pin)
+    except VaultError as e:
+        _raise_vault_error(e)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"message": f"Setup failed: {type(e).__name__}: {e}"})
+
+@app.post("/api/unlock")
+def unlock(body: PinBody, session_token: str = Depends(verify_session_token)):
+    try:
+        return vault.unlock(body.pin)
+    except VaultError as e:
+        _raise_vault_error(e)
+
+@app.post("/api/unlock/recover")
+def unlock_recover(body: RecoverBody, session_token: str = Depends(verify_session_token)):
+    try:
+        return vault.recover(body.recovery_key, body.new_pin)
+    except VaultError as e:
+        _raise_vault_error(e)
+
+@app.post("/api/unlock/change-pin")
+def unlock_change_pin(body: ChangePinBody, session_token: str = Depends(verify_session_token)):
+    try:
+        vault.change_pin(body.current_pin, body.new_pin)
+        return {"status": "ok"}
+    except VaultError as e:
+        _raise_vault_error(e)
+
+@app.post("/api/unlock/verify")
+def unlock_verify(body: PinBody, session_token: str = Depends(verify_session_token)):
+    try:
+        vault.verify_pin(body.pin)
+        return {"pin_fresh": True}
+    except VaultError as e:
+        _raise_vault_error(e)
+
+@app.post("/api/unlock/auto-lock")
+def unlock_auto_lock(body: AutoLockBody, session_token: str = Depends(verify_session_token)):
+    try:
+        return {"auto_lock_minutes": vault.set_auto_lock_minutes(body.minutes)}
+    except VaultError as e:
+        _raise_vault_error(e)
+
+@app.post("/api/lock")
+def lock_now(session_token: str = Depends(verify_session_token)):
+    vault.lock("manual")
+    return {"state": vault.state()}
+
+@app.post("/api/unlock/delete-old-db")
+def delete_old_unencrypted_db(body: DeleteOldDbBody, session_token: str = Depends(verify_session_token)):
+    """Deletes the old unencrypted database after migration. Needs a fresh PIN (it deletes data)."""
+    if vault.needs_pin_for_tier(4):
+        if not body.pin:
+            raise HTTPException(status_code=403, detail={"code": "pin_required", "message": "Enter your PIN to delete the old copy."})
+        try:
+            vault.verify_pin(body.pin)
+        except VaultError as e:
+            _raise_vault_error(e)
+    return {"deleted": db_store.delete_legacy_db()}
+
 @app.websocket("/ws/chat")
 async def chat_endpoint(websocket: WebSocket):
     # Origin validation
@@ -261,8 +430,15 @@ async def chat_endpoint(websocket: WebSocket):
     # Track the currently running executor task so cancellation can await it
     _active_executor_task: asyncio.Task | None = None
 
-    # Initialize DB session and create a new thread for this connection
-    db = SessionLocal()
+    # Initialize DB session and create a new thread for this connection.
+    # While Sentinel is locked the database is closed: tell the window instead of failing.
+    try:
+        db = SessionLocal()
+    except Exception:
+        await websocket.send_json({"type": "locked", "message": "Sentinel is locked. Unlock it to chat."})
+        await websocket.close(code=4423)
+        return
+    CHAT_SOCKETS.add(websocket)
     thread_id = memory_service.create_thread(db, title="Websocket Session")
 
     await websocket.send_json({
@@ -281,6 +457,7 @@ async def chat_endpoint(websocket: WebSocket):
             cancel_event.clear()
 
             raw_message = await websocket.receive_text()
+            vault.touch()
             import uuid
             try:
                 data = json.loads(raw_message)
@@ -539,4 +716,8 @@ async def chat_endpoint(websocket: WebSocket):
             token_service.cleanup_expired()
         except Exception:
             pass
-        db.close()
+        CHAT_SOCKETS.discard(websocket)
+        try:
+            db.close()
+        except Exception:
+            pass   # the connection may already be closed because Sentinel locked

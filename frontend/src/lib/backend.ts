@@ -12,6 +12,25 @@ export async function backendInfo(): Promise<{ port: number; token: string }> {
   return { port: 8000, token: 'dev_fallback_token' }; // browser dev mode without Electron
 }
 
+export class ApiError extends Error {
+  status: number;
+  detail: unknown;
+  constructor(status: number, detail: unknown) {
+    const d = detail as { message?: unknown } | string | null;
+    super(typeof d === 'string' ? d : (d && typeof d.message === 'string' ? d.message : `HTTP ${status}`));
+    this.status = status;
+    this.detail = detail;
+  }
+  get retryAfter(): number {
+    const d = this.detail as { retry_after?: unknown } | null;
+    return d && typeof d === 'object' && typeof d.retry_after === 'number' ? d.retry_after : 0;
+  }
+  get code(): string {
+    const d = this.detail as { code?: unknown } | null;
+    return d && typeof d === 'object' && typeof d.code === 'string' ? d.code : '';
+  }
+}
+
 async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
   const { port, token } = await backendInfo();
   const headers: Record<string, string> = { 'X-Sentinel-Session': token };
@@ -21,7 +40,11 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${method} ${path} failed: HTTP ${res.status}`);
+  if (!res.ok) {
+    let detail: unknown = null;
+    try { detail = ((await res.json()) as { detail?: unknown }).detail ?? null; } catch { /* not JSON */ }
+    throw new ApiError(res.status, detail);
+  }
   return (await res.json()) as T;
 }
 
@@ -57,4 +80,17 @@ export function timeAgo(iso: string): string {
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   if (s < 86400) return `${Math.round(s / 3600)} h ago`;
   return `${Math.round(s / 86400)} d ago`;
+}
+
+export type UnlockStatus = {
+  state: 'setup_required' | 'locked' | 'unlocked';
+  retry_after: number; failed_attempts: number; auto_lock_minutes: number;
+  windows_bound: boolean; pin_fresh: boolean; pin_required_tier: number; min_pin_length: number;
+  old_unencrypted_db?: boolean;
+};
+
+// Lets any component ask the unlock gate to re-check right away (after Lock, or a "locked" message).
+export const LOCK_EVENT = 'sentinel:lockstate';
+export function notifyLockStateChanged(): void {
+  window.dispatchEvent(new Event(LOCK_EVENT));
 }

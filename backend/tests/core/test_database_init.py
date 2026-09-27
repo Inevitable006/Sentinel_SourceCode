@@ -1,11 +1,11 @@
 """Database bootstrap: a fresh install must get the FTS5 memory index."""
 from sqlalchemy import text
 
-from app.db.database import engine, init_db
+from app.db.database import get_engine, init_db
 
 
 def _names(kind):
-    with engine.connect() as c:
+    with get_engine().connect() as c:
         return {r[0] for r in c.execute(text("SELECT name FROM sqlite_master WHERE type = :k"), {"k": kind})}
 
 
@@ -22,13 +22,13 @@ def test_init_db_is_idempotent():
 
 def test_init_db_backfills_memories_missing_from_the_index():
     init_db()
-    with engine.begin() as c:
+    with get_engine().begin() as c:
         c.execute(text("INSERT INTO memory_items (id, content, confidence, importance) "
                        "VALUES ('bf-1', 'likes green tea', 100, 3)"))
         # Simulate a database whose memories were written before the index existed.
         c.execute(text("DELETE FROM fts_memory_items WHERE id = 'bf-1'"))
     init_db()
-    with engine.connect() as c:
+    with get_engine().connect() as c:
         hits = [r[0] for r in c.execute(text("SELECT id FROM fts_memory_items WHERE fts_memory_items MATCH 'green'"))]
     assert "bf-1" in hits
 

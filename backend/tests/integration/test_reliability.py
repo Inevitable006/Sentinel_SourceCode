@@ -118,7 +118,7 @@ def _build_namespace(responses, tool_result=None, tool_side_effect=None):
         asyncio=asyncio,
         hmac=hmac,
         json=json,
-        SessionLocal=lambda: db,
+        SessionLocal=lambda: db, CHAT_SOCKETS=set(), vault=types.SimpleNamespace(touch=lambda: None),
         memory_service=memory,
         ai_service=ai,
         AppSettings=object,

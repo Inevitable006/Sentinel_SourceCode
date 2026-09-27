@@ -78,7 +78,7 @@ class ChatProtocolTests(unittest.IsolatedAsyncioTestCase):
         modules["app.core.skill_router"].skill_router = types.SimpleNamespace(check_confidence=lambda *_: True, resolve_skill=lambda *_: None)
         modules["app.core.safe_process"].safe_process = types.SimpleNamespace(cancel_job=lambda *_: None)
         namespace = dict(WebSocket=Socket, WebSocketDisconnect=Disconnected, os=os, asyncio=asyncio, hmac=hmac,
-                         json=json, SessionLocal=lambda: db, memory_service=memory, ai_service=ai,
+                         json=json, SessionLocal=lambda: db, CHAT_SOCKETS=set(), vault=types.SimpleNamespace(touch=lambda: None), memory_service=memory, ai_service=ai,
                          AppSettings=object, vision_service=None)
         exec(compile(module, str(source), "exec"), namespace)
         socket = Socket()

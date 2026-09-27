@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './SettingsPanel.css';
-import { apiGet, apiPost, timeAgo, type EgressEvent, type EgressStatus } from '../../lib/backend';
+import { apiGet, apiPost, ApiError, timeAgo, type EgressEvent, type EgressStatus, type UnlockStatus } from '../../lib/backend';
 
 interface ModelProfile {
   id: string;
@@ -15,6 +15,11 @@ const SettingsPanel: React.FC = () => {
   const [localOnly, setLocalOnly] = useState(false);
   const [offline, setOffline] = useState(false);
   const [netEvents, setNetEvents] = useState<EgressEvent[]>([]);
+  const [unlock, setUnlock] = useState<UnlockStatus | null>(null);
+  const [pinCurrent, setPinCurrent] = useState('');
+  const [pinNew, setPinNew] = useState('');
+  const [pinNew2, setPinNew2] = useState('');
+  const [oldDbPin, setOldDbPin] = useState('');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
 
@@ -79,6 +84,42 @@ const SettingsPanel: React.FC = () => {
     const id = window.setInterval(refreshNetwork, 10000);
     return () => window.clearInterval(id);
   }, []);
+
+  const refreshUnlock = async () => {
+    try { setUnlock(await apiGet<UnlockStatus>('/api/unlock/status')); } catch (err) { console.error(err); }
+  };
+  useEffect(() => { refreshUnlock(); }, []);
+
+  const say = (msg: string) => { setStatus(msg); setTimeout(() => setStatus(''), 4000); };
+  const errText = (err: unknown) => (err instanceof ApiError ? err.message : 'Could not reach the backend.');
+
+  const handleAutoLock = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    try {
+      const r = await apiPost<{ auto_lock_minutes: number }>('/api/unlock/auto-lock', { minutes: Number(e.target.value) });
+      say(r.auto_lock_minutes ? `Sentinel will lock after ${r.auto_lock_minutes} idle minutes.` : 'Auto-lock turned off.');
+      refreshUnlock();
+    } catch (err) { say(errText(err)); }
+  };
+
+  const handleChangePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pinNew !== pinNew2) { say('The two new PINs are different.'); return; }
+    try {
+      await apiPost('/api/unlock/change-pin', { current_pin: pinCurrent, new_pin: pinNew });
+      setPinCurrent(''); setPinNew(''); setPinNew2('');
+      say('PIN changed. Your recovery key still works.');
+    } catch (err) { say(errText(err)); }
+  };
+
+  const handleDeleteOldDb = async () => {
+    if (!window.confirm('Delete the old unencrypted copy of your memory database? Your encrypted data stays. This cannot be undone.')) return;
+    try {
+      const r = await apiPost<{ deleted: boolean }>('/api/unlock/delete-old-db', { pin: oldDbPin || undefined });
+      setOldDbPin('');
+      say(r.deleted ? 'Old unencrypted copy deleted.' : 'There was no old copy left to delete.');
+      refreshUnlock();
+    } catch (err) { say(errText(err)); }
+  };
 
   const handleOfflineChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const enabled = e.target.checked;
@@ -244,6 +285,35 @@ const SettingsPanel: React.FC = () => {
             Deletes the list of web searches Sentinel has made. It does not touch remembered facts.
           </p>
         </div>
+      </div>
+
+      <div className="settings-section">
+        <h3>Security</h3>
+        <p className="settings-desc">
+          Your memories, chats and settings are encrypted on this PC. {unlock?.windows_bound ? 'The PIN only works together with your Windows login. ' : ''}
+          Actions of risk level {unlock?.pin_required_tier ?? 3} and above (changing files, launching programs, deleting) ask for your PIN again if you haven't typed it in the last 5 minutes.
+        </p>
+        <label className="settings-desc" htmlFor="auto-lock" style={{ display: 'block', marginTop: '0.5rem' }}>Lock automatically after</label>
+        <select id="auto-lock" className="settings-dropdown" value={String(unlock?.auto_lock_minutes ?? 15)} onChange={handleAutoLock}>
+          {[5, 15, 30, 60, 120].map(m => <option key={m} value={m}>{m} idle minutes</option>)}
+          <option value="0">Never</option>
+        </select>
+
+        <form onSubmit={handleChangePin} style={{ display: 'grid', gap: '0.5rem', marginTop: '1rem', maxWidth: '360px' }}>
+          <span className="settings-desc">Change PIN</span>
+          <input id="pin-current" type="password" placeholder="Current PIN" autoComplete="current-password" className="settings-dropdown" value={pinCurrent} onChange={e => setPinCurrent(e.target.value)} />
+          <input id="pin-new" type="password" placeholder={`New PIN (${unlock?.min_pin_length ?? 6}+ characters)`} autoComplete="new-password" className="settings-dropdown" value={pinNew} onChange={e => setPinNew(e.target.value)} />
+          <input id="pin-new2" type="password" placeholder="New PIN again" autoComplete="new-password" className="settings-dropdown" value={pinNew2} onChange={e => setPinNew2(e.target.value)} />
+          <button type="submit" className="save-btn" disabled={!pinCurrent || !pinNew}>Change PIN</button>
+        </form>
+
+        {unlock?.old_unencrypted_db && (
+          <div className="old-db-warning">
+            <p><strong>An unencrypted copy of your old memory database is still on this PC</strong> (<code>jarvis_memory.db</code>). Your data is already in the encrypted database, so you can delete it.</p>
+            <input id="old-db-pin" type="password" placeholder="PIN" autoComplete="current-password" className="settings-dropdown" value={oldDbPin} onChange={e => setOldDbPin(e.target.value)} />
+            <button type="button" className="save-btn" style={{ backgroundColor: 'var(--accent-red)' }} onClick={handleDeleteOldDb}>Delete old unencrypted copy</button>
+          </div>
+        )}
       </div>
 
       <div className="settings-section">

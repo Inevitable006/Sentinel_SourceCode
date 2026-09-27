@@ -87,16 +87,40 @@ socket.getaddrinfo = _guarded_getaddrinfo
 asyncio.BaseEventLoop.create_connection = _guarded_create_connection
 
 
+_TEST_DB_KEY = os.urandom(32)   # the throwaway test database is encrypted exactly like the real one
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _isolated_data_dir():
     from app.core.paths import SENTINEL_DATA_DIR, ensure_paths
 
     assert str(SENTINEL_DATA_DIR).startswith(_TEST_DATA_ROOT), "tests must never touch the real data directory"
     ensure_paths()
-    # Create the DB schema (tables + memory FTS index) the app creates at startup.
-    from app.db.database import engine, init_db
+    # Open the encrypted test database (the app opens it at unlock) and create the schema.
+    from app.db.database import close_database, init_db, open_database
 
+    open_database(_TEST_DB_KEY)
     init_db()
     yield
-    engine.dispose()
+    close_database()
     shutil.rmtree(_TEST_DATA_ROOT, ignore_errors=True)
+
+
+@pytest.fixture()
+def locked_db():
+    """Closes the test database for one test (as if Sentinel were locked), then reopens it."""
+    from app.db.database import close_database, open_database
+
+    close_database()
+    yield
+    open_database(_TEST_DB_KEY)
+
+
+@pytest.fixture()
+def reopen_db():
+    """For tests that close the database themselves: reopens it afterwards."""
+    from app.db.database import is_open, open_database
+
+    yield
+    if not is_open():
+        open_database(_TEST_DB_KEY)

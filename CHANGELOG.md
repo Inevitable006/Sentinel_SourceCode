@@ -7,6 +7,26 @@ Newest first. Each entry says what changed, why it matters and how to check it.
 
 ---
 
+## 2026-09-27 · Steps 1.3 + 1.4: your PIN, and an encrypted database
+**Branch:** `phase1/security`
+
+- **What changed:** Sentinel's memories, chats and settings now live in an **encrypted database** (`%APPDATA%\sentinel\sentinel.db`, SQLCipher). It stays closed until you unlock Sentinel with your **PIN**. While it's locked, nothing can read it: not the app, not another program, not someone who copies the file.
+- **First start:** Sentinel asks you to choose a PIN (6+ characters; a longer passphrase is stronger). It then shows a **recovery key** once, for example `ABCD-EFGH-…`. Save that key on paper or in a password manager. If you forget your PIN, or Windows is reinstalled, it's the only way back in. Nobody can reset the PIN for you, by design.
+- **Your existing data moves over by itself:** at setup, the old unencrypted database (`jarvis_memory.db`) is copied into the encrypted one. It's checked table by table and cleaned of rows left behind by old test runs: four known test memories, one test chat and empty chat sessions. The old file stays untouched until you delete it in **Settings → Security**.
+- **How the keys work, in short:** a random 256-bit key encrypts the database. That key is stored only in locked form, twice:
+  - with your PIN (Argon2id, deliberately slow to guess) and then sealed by Windows DPAPI, so it also needs your Windows login;
+  - with your recovery key.
+  `keystore.json` contains only those locked copies.
+- **Guessing is slowed down:** after 5 wrong PINs you wait 30 seconds, then 60, 120… up to an hour. This survives restarts.
+- **Auto-lock:** Sentinel locks after 15 idle minutes (change it in Settings, or pick "Never"). The **Lock Sentinel** button in the sidebar locks it at once. Locking closes the database, including connections already in use, and tells open chat windows.
+- **PIN for risky actions:** approving something that changes files, launches programs or deletes (risk Tier 3+) asks for your PIN again if you haven't typed it in the last 5 minutes (decision D6).
+- **Also:** the sidebar's fake "System Online" label is replaced by the Lock button. Settings gained Change PIN, auto-lock and "delete old unencrypted copy".
+- **New packages:** `cryptography 50.0.1` (AES-GCM, Argon2id) and `sqlcipher3-wheels 0.5.7` (encrypted SQLite). Both were checked on your Python 3.14 first. Neither makes network calls.
+- **Tests:** 237 pass. They cover the vault (rate limits, recovery, auto-lock, Windows binding), the encrypted file (no plaintext on disk, wrong key refused, locked means closed) and the migration (verify, clean, keep the old file). The chat smoke test now sets up a PIN in an isolated folder first.
+- **Files:** `backend/app/core/vault.py` (new), `app/core/dpapi.py` (new), `app/db/database.py` (rewritten), `app/main.py` (unlock API, 423 while locked, auto-lock loop), tests (`test_vault.py`, `test_database_encryption.py`, `test_unlock_api.py`, `test_crypto_capabilities.py`, plus updates), `tools/smoke_chat.py`, `frontend/src/components/Unlock/*` (new), `App.tsx`, `Sidebar`, `ChatArea.tsx`, `SettingsPanel.tsx`, `lib/backend.ts`
+
+---
+
 ## 2026-09-27 · Step 1.2: session token out of URLs
 **Branch:** `phase1/security`
 

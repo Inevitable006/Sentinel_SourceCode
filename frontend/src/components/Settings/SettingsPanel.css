@@ -137,3 +137,8 @@
 .net-activity-list li.blocked { border-left-color: #f87171; }
 .net-host { color: var(--text-primary); font-weight: 600; overflow-wrap: anywhere; }
 .net-meta { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.old-db-warning { margin-top: 1rem; padding: 0.8rem; border-radius: var(--radius-sm); border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.06); display: grid; gap: 0.5rem; max-width: 480px; }
+.old-db-warning p { margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45; }
+.old-db-warning strong { color: #fbbf24; }

@@ -42,6 +42,7 @@ Verified on Windows with `tools\check.bat`.
 - **D2 Test rows in the real memory DB: APPROVED.** A script backs up `jarvis_memory.db`, shows how many test-created rows it found, and deletes only after you confirm. Runs before encryption (step 1.0).
 - **D3 GitHub repo was PUBLIC.** History scan on 2026-09-27 (common key formats, passwords, `.env`, DB files) found none, only test placeholder tokens, so nothing to revoke. Owner sets the repo to Private; nothing is pushed until then. Archive `chore/structure-cleanup`.
 - **D4 Unlock: PIN now, Windows Hello later (Phase 2).** Random 256-bit data key, wrapped by a PIN-derived key (Argon2id) and by DPAPI (tied to your Windows login). One-time recovery key kept offline.
+- **D6 PIN re-check from risk Tier 3 (decided 2026-09-27).** Approving an action that changes files, launches programs or deletes (Tier 3+) needs a PIN typed in the last 5 minutes. Tier 2 (web search, reading approved data) still needs your click but no PIN, because asking for it on every search would be tedious. `PIN_REQUIRED_TIER` in `vault.py` can lower it to 2.
 - **D5 Working model: split by risk.** Claude writes all security-critical code; low-risk tasks go to Antigravity/Codex as task cards (`docs/tasks/`, rules in `AGENTS.md`); Claude reviews the diffs. Windows checks run through the watcher (§5).
 
 ## 4. Roadmap (smallest secure step first)

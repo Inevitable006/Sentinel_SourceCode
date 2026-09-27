@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Paperclip, Bot, User, Volume2, VolumeX } from 'lucide-react';
 import './Chat.css';
+import { notifyLockStateChanged } from '../../lib/backend';
 
 interface Message {
   id: string;
@@ -34,6 +35,8 @@ const ChatArea: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [pinNeeded, setPinNeeded] = useState(false);
+  const [approvalPin, setApprovalPin] = useState('');
   const streamIdRef = useRef<string | null>(null);
   const authRef = useRef({ port: 8000, token: '' });
   const wsRef = useRef<WebSocket | null>(null);
@@ -142,7 +145,12 @@ const ChatArea: React.FC = () => {
             setBusy(!['COMPLETED', 'CANCELLED', 'WAITING_FOR_PERMISSION'].includes(data.state));
           } else if (data.type === 'tool_confirmation_required') {
             setConfirmation(data.data);
+            setPinNeeded(false);
+            setApprovalPin('');
             setBusy(false);
+          } else if (data.type === 'locked') {
+            setStatus('Sentinel locked.');
+            notifyLockStateChanged();
           }
         } catch {
           setStatus('Received an invalid response from the backend.');
@@ -230,10 +238,25 @@ const ChatArea: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Sentinel-Session': token },
         body: JSON.stringify({ token: pending.token, session_id: pending.session_id,
-          tool_name: pending.action_preview.tool, args: pending.action_preview.args })
+          tool_name: pending.action_preview.tool, args: pending.action_preview.args,
+          pin: approvalPin || undefined })
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(String(result.detail || 'Confirmation failed'));
+      // PIN problems are answered before the action runs, so the approval can be offered again.
+      if ([401, 403, 429].includes(response.status)) {
+        const detail = (result && result.detail) || {};
+        setConfirmation(pending);
+        setPinNeeded(true);
+        setApprovalPin('');
+        setStatus(String(detail.message || 'Enter your PIN to approve this action.'));
+        return;
+      }
+      if (!response.ok) {
+        const detail = result && result.detail;
+        throw new Error(typeof detail === 'string' ? detail : String((detail && detail.message) || 'Confirmation failed'));
+      }
+      setPinNeeded(false);
+      setApprovalPin('');
       setMessages(prev => [...prev, { id: crypto.randomUUID(), sender: 'sentinel',
         text: result.status === 'success' ? String(result.data) : String(result.message || 'Action did not complete.'), timestamp: new Date() }]);
       setStatus(result.status === 'success' ? 'Action completed.' : 'Action did not complete.');
@@ -304,8 +327,15 @@ const ChatArea: React.FC = () => {
             <p>{confirmation.action_preview.purpose}</p>
             <p>Risk: {confirmation.action_preview.risk}</p>
             <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{JSON.stringify(confirmation.action_preview.args, null, 2)}</pre>
-            <button type="button" onClick={handleConfirm} disabled={confirming || !isConnected}>Approve action</button>
-            <button type="button" onClick={() => { setConfirmation(null); setStatus('Action declined.'); }}>Decline</button>
+            {pinNeeded && (
+              <label htmlFor="approval-pin" style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: '6px 0' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>High-risk action: enter your PIN to approve</span>
+                <input id="approval-pin" type="password" autoComplete="current-password" value={approvalPin}
+                       onChange={(e) => setApprovalPin(e.target.value)} />
+              </label>
+            )}
+            <button type="button" onClick={handleConfirm} disabled={confirming || !isConnected || (pinNeeded && !approvalPin)}>Approve action</button>
+            <button type="button" onClick={() => { setConfirmation(null); setPinNeeded(false); setApprovalPin(''); setStatus('Action declined.'); }}>Decline</button>
           </div>
         )}
         {selectedImage && (

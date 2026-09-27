@@ -17,3 +17,5 @@ pyttsx3==2.90
 # so the RTX 3050 is not used. See docs/ROADMAP.md -> "GPU inference decision".
 llama-cpp-python==0.2.60
 nvidia-ml-py==13.615.71     # GPU stats via NVML (no nvidia-smi process per poll)
+cryptography==50.0.1        # AES-GCM + Argon2id for the owner unlock (no network use)
+sqlcipher3-wheels==0.5.7    # SQLCipher: encrypted SQLite database (import name: sqlcipher3)
