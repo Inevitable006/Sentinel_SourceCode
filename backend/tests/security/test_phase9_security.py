@@ -25,6 +25,10 @@ def check(name, condition):
     else:
         print(f"  FAIL: {name}")
         failed += 1
+    # Under pytest a failed check must fail the test (previously it only printed
+    # "FAIL" and the test still passed). Script mode keeps counting as before.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        assert condition, name
 
 import ast
 

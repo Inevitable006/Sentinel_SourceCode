@@ -23,6 +23,17 @@ from app.core.resource_governor import resource_governor, SystemState
 passed = 0
 failed = 0
 
+import pytest
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _registered_skills():
+    """These tests need the built-in skills registered (normally done at app startup)."""
+    if "core_diagnostics" not in skill_router._skills:
+        from app.core.skill_loader import register_all_skills
+        register_all_skills()
+    yield
+
 def check(name, condition):
     global passed, failed
     if condition:
@@ -31,6 +42,10 @@ def check(name, condition):
     else:
         print(f"  FAIL: {name}")
         failed += 1
+    # Under pytest a failed check must fail the test (previously it only printed
+    # "FAIL" and the test still passed). Script mode keeps counting as before.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        assert condition, name
 
 
 # ============================================================

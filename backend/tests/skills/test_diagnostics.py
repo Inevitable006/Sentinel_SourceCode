@@ -10,7 +10,7 @@ import subprocess
 import pytest
 from unittest.mock import MagicMock, patch
 
-from backend.skills.core_diagnostics import (
+from skills.core_diagnostics import (
     get_disk_usage,
     get_top_processes,
     get_network_stats,

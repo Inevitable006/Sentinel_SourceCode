@@ -40,6 +40,12 @@ class ResourceGovernor:
             loop = asyncio.get_event_loop()
             self._task = loop.create_task(self._monitor_loop())
             print("[ResourceGovernor] Started background monitoring.")
+
+    def stop(self):
+        """Stops the background monitoring loop (called on app shutdown)."""
+        if self._task is not None:
+            self._task.cancel()
+            self._task = None
             
     async def _monitor_loop(self):
         while True:
@@ -75,20 +81,23 @@ class ResourceGovernor:
             
             # Check high load thresholds
             if cpu >= self.cpu_high_threshold or ram >= self.ram_high_threshold or vram >= 85.0:
-                self.high_load_count += 1
+                # A spike during recovery restarts the clean-check countdown.
+                self.high_load_count = max(self.high_load_count, 0) + 1
                 if self.high_load_count >= 2: # 10 seconds sustained
                     if self.state != SystemState.EMERGENCY:
                         self._transition_to(SystemState.HIGH_LOAD)
             else:
-                self.high_load_count = 0
-                
                 # If we were in high load/emergency and it subsided
                 if self.state in [SystemState.HIGH_LOAD, SystemState.EMERGENCY]:
-                    # Require 3 consecutive clean checks (15 seconds) to downgrade back to interactive
-                    self.high_load_count -= 1
+                    # Require 3 consecutive clean checks (15 seconds) to downgrade back to interactive.
+                    # (Previously the counter was reset to 0 on every clean check, so it never
+                    # reached -3 and Sentinel stayed in HIGH_LOAD/EMERGENCY until restart.)
+                    self.high_load_count = min(self.high_load_count, 0) - 1
                     if self.high_load_count <= -3:
                         self._transition_to(SystemState.INTERACTIVE)
                         self.high_load_count = 0
+                else:
+                    self.high_load_count = 0
 
     def _transition_to(self, new_state: SystemState):
         if self.state != new_state:

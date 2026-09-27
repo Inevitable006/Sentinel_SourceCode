@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from sqlalchemy import text
-from app.db.database import SessionLocal, engine
+from app.db.database import SessionLocal, engine, init_db
 from app.db import models
 from app.core.memory_service import memory_service
 from app.core.paths import SENTINEL_DATA_DIR
@@ -9,6 +9,7 @@ from app.core.paths import SENTINEL_DATA_DIR
 DB_PATH = SENTINEL_DATA_DIR / 'jarvis_memory.db'
 
 def run_tests():
+    init_db()  # tables + memory FTS index (works on a fresh data dir too)
     db = SessionLocal()
     
     print("\n--- PHASE 8 ACCEPTANCE TESTS ---")
