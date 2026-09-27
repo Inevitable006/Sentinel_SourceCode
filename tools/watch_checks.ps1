@@ -4,6 +4,7 @@
 #   quick | tests | smoke | electron | env | gpu | all | deps | pytest | probe -> runs tools\check.ps1 -Only <that word>
 #   status                                                     -> branch, changed files, last commits
 #   commit                                                     -> git add -A + git commit -F docs\runs\commit_msg.txt
+#   ff-main                                                    -> fast-forward main to the current branch (never pushes)
 #                                                                 (refused on main / detached HEAD; never pushes)
 # Nothing from the request file is ever executed. Unknown words are ignored.
 # Progress: docs\runs\watcher_status.txt   Results: docs\runs\latest.txt   (docs\runs is git-ignored)
@@ -69,7 +70,7 @@ while ($true) {
       & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "check.ps1") -Only $action
       Set-Status "done $action"; $tick = 0
     }
-    elseif ($action -eq "status" -or $action -eq "commit") {
+    elseif ($action -eq "status" -or $action -eq "commit" -or $action -eq "ff-main") {
       Write-Host "$time  git: $action"
       Set-Status "running $action"
       Set-Location $root
@@ -86,6 +87,13 @@ while ($true) {
             "commit exit code: $LASTEXITCODE"
             Move-Item $msgFile "$msgFile.used" -Force   # a message is used once
           }
+        }
+        if ($action -eq "ff-main") {
+          # Move main up to this finished phase branch: fast-forward only, no checkout, never a push.
+          git merge-base --is-ancestor main HEAD
+          if ($LASTEXITCODE -ne 0) { "REFUSED: main has commits that are not on $branch." }
+          elseif ($branch -eq "main") { "Already on main." }
+          else { git branch -f main HEAD; "main -> $((git rev-parse --short main | Out-String).Trim())" }
         }
         "--- changed files"; git status --short
         "--- last commits"; git log --oneline -5
