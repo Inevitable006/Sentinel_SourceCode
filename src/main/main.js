@@ -2,9 +2,31 @@
 // Required for downloading AI models from HuggingFace behind corporate firewalls
 // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // REMOVED for Security
 
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, desktopCapturer, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, dialog } = require('electron');
 const path = require('path');
-const si = require('systeminformation');
+const { fileURLToPath } = require('url');
+
+// ─── Trusted UI location ─────────────────────────────────────────
+// The only page allowed in the app window, and the only page allowed to
+// ask for the backend session token.
+const IS_DEV = process.argv.includes('--dev');
+const DEV_ORIGIN = 'http://localhost:5173';
+const APP_INDEX_PATH = path.resolve(__dirname, '../../frontend/dist/index.html');
+
+function isAppUrl(url) {
+  try {
+    const u = new URL(url);
+    if (IS_DEV) return u.origin === DEV_ORIGIN;
+    if (u.protocol !== 'file:') return false;
+    return path.resolve(fileURLToPath(u)).toLowerCase() === APP_INDEX_PATH.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+function isTrustedSender(event) {
+  return isAppUrl(event?.senderFrame?.url || '');
+}
 
 // ─── Core Systems ────────────────────────────────────────────────
 // Import SENTINEL's foundation layer (Phase 1)
@@ -126,10 +148,11 @@ async function bootSentinel() {
     try {
       logger.info('system', `Spawning Python backend (Attempt ${retryCount + 1}/${MAX_RETRIES + 1})...`);
 
-      const backendEnv = { 
-        ...process.env, 
+      const backendEnv = {
+        ...process.env,
         SENTINEL_SESSION_TOKEN: global.SENTINEL_SESSION_TOKEN,
-        SENTINEL_BACKEND_PORT: global.SENTINEL_BACKEND_PORT
+        SENTINEL_BACKEND_PORT: global.SENTINEL_BACKEND_PORT,
+        PYTHONUNBUFFERED: '1' // stream backend logs live (and keep them if it crashes)
       };
 
       aiProcess = spawn(pythonCmd, [serverScript], {
@@ -219,17 +242,26 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     },
     icon: path.join(__dirname, '../../assets/icons/sentinel.png'),
     show: false
   });
 
-  const isDev = process.argv.includes('--dev');
-  if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+  // Security: the window may only ever show the Sentinel UI. A link in model
+  // output must not load a web page that could reach the preload bridge.
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!isAppUrl(url)) {
+      event.preventDefault();
+      logger.warn('security', 'Blocked navigation away from the app UI', { url: String(url).slice(0, 200) });
+    }
+  });
+
+  if (IS_DEV) {
+    mainWindow.loadURL(DEV_ORIGIN);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../../frontend/dist/index.html'));
+    mainWindow.loadFile(APP_INDEX_PATH);
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -292,8 +324,14 @@ function createTray() {
 }
 
 // ─── IPC Handlers: Authentication ────────────────────────────────
-ipcMain.handle('auth-get-session-token', () => global.SENTINEL_SESSION_TOKEN);
-ipcMain.handle('auth-get-backend-port', () => global.SENTINEL_BACKEND_PORT);
+ipcMain.handle('auth-get-session-token', (event) => {
+  if (!isTrustedSender(event)) {
+    logger.warn('security', 'Refused session token to untrusted frame');
+    return null;
+  }
+  return global.SENTINEL_SESSION_TOKEN;
+});
+ipcMain.handle('auth-get-backend-port', (event) => (isTrustedSender(event) ? global.SENTINEL_BACKEND_PORT : null));
 
 // ─── IPC Handlers: Window Controls ──────────────────────────────
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
@@ -308,193 +346,11 @@ ipcMain.on('window-close', () => mainWindow?.hide());
 
 ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized());
 
-// ─── IPC Handlers: System Information ───────────────────────────
-ipcMain.handle('get-system-stats', async () => {
-  return await errorHandler.wrap(
-    async () => {
-      const [cpu, mem, disk, networkStats, battery, osInfo, graphics] = await Promise.all([
-        si.currentLoad(),
-        si.mem(),
-        si.fsSize(),
-        si.networkStats(),
-        si.battery(),
-        si.osInfo(),
-        si.graphics()
-      ]);
-      return { cpu, mem, disk, networkStats, battery, osInfo, graphics, timestamp: Date.now() };
-    },
-    { category: 'system', operation: 'Get system stats', fallback: null, silent: true }
-  );
-});
-
-ipcMain.handle('get-cpu-temperature', async () => {
-  return await errorHandler.wrap(
-    () => si.cpuTemperature(),
-    { category: 'system', operation: 'Get CPU temperature', fallback: null, silent: true }
-  );
-});
-
-// ─── IPC Handlers: Process Management ───────────────────────────
-ipcMain.handle('get-processes', async () => {
-  return await errorHandler.wrap(
-    () => si.processes(),
-    { category: 'system', operation: 'Get processes', fallback: null, silent: true }
-  );
-});
-
-ipcMain.handle('launch-app', async (event, appPath) => {
-  try {
-    const errorMsg = await shell.openPath(appPath);
-    if (errorMsg) {
-      logger.warn('system', `Failed to launch app: ${appPath}`, { error: errorMsg });
-      return { success: false, error: errorMsg };
-    }
-    logger.info('user', `Launched app: ${appPath}`);
-    return { success: true };
-  } catch (err) {
-    logger.warn('system', `Failed to launch app: ${appPath}`, { error: err.message });
-    return { success: false, error: err.message };
-  }
-});
-
-ipcMain.handle('kill-process', async (event, pid) => {
-  try {
-    process.kill(pid, 'SIGKILL');
-    logger.info('user', `Killed process: ${pid}`);
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-// ─── IPC Handlers: File System ──────────────────────────────────
-ipcMain.handle('read-directory', async (event, dirPath) => {
-  const fs = require('fs');
-  return errorHandler.wrapSync(
-    () => {
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-      return entries.map(entry => ({
-        name: entry.name,
-        isDirectory: entry.isDirectory(),
-        path: path.join(dirPath, entry.name)
-      }));
-    },
-    { category: 'file', operation: `Read directory: ${dirPath}`, fallback: { error: 'Failed to read directory' } }
-  );
-});
-
-ipcMain.handle('open-file', async (event, filePath) => {
-  try {
-    await shell.openPath(filePath);
-    logger.info('user', `Opened file: ${filePath}`);
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-
-// ─── IPC Handlers: Screen Capture ───────────────────────────────
-ipcMain.handle('capture-screen', async (event, width = 1920, height = 1080) => {
-  return await errorHandler.wrap(
-    async () => {
-      const sources = await desktopCapturer.getSources({
-        types: ['screen'],
-        thumbnailSize: { width, height }
-      });
-      if (sources.length > 0) {
-        return sources[0].thumbnail.toDataURL();
-      }
-      return null;
-    },
-    { category: 'system', operation: 'Screen capture', fallback: null }
-  );
-});
-
-// ─── IPC Handlers: Core Systems (Phase 1) ───────────────────────
-ipcMain.handle('get-system-profile', () => {
-  return systemProfiler.getSummary();
-});
-
-ipcMain.handle('get-config', (event, keyPath) => {
-  return configManager.get(keyPath);
-});
-
-ipcMain.handle('set-config', (event, keyPath, value) => {
-  configManager.set(keyPath, value);
-  return true;
-});
-
-ipcMain.handle('get-all-config', () => {
-  return configManager.getAll();
-});
-
-ipcMain.handle('get-error-stats', () => {
-  return errorHandler.getStats();
-});
-
-ipcMain.handle('get-module-status', () => {
-  return moduleManager.getStatusAll();
-});
-
-ipcMain.handle('get-boot-info', () => {
-  return {
-    isFirstRun: configManager.get('firstRunDate') === null,
-    tier: systemProfiler.getTier(),
-    safeMode: errorHandler.isSafeMode(),
-    profile: systemProfiler.getSummary(),
-    lastRun: configManager.get('lastRunDate')
-  };
-});
-
-// ─── IPC Handlers: AI Engine ────────────────────────────────────
-let aiEngine = null;
-
-ipcMain.handle('ai-initialize', async () => {
-  return await errorHandler.wrap(
-    async () => {
-      const { LLMEngine } = require('./ai/llm-engine');
-      aiEngine = new LLMEngine();
-      const result = await aiEngine.initialize();
-      logger.info('ai', 'AI engine initialized', result);
-      return result;
-    },
-    { category: 'ai', operation: 'AI initialization', retry: true, fallback: { success: false, error: 'AI initialization failed' } }
-  );
-});
-
-ipcMain.handle('ai-chat', async (event, messages) => {
-  if (!aiEngine) {
-    return { error: 'AI engine not initialized' };
-  }
-  return await errorHandler.wrap(
-    () => aiEngine.chat(messages),
-    { category: 'ai', operation: 'AI chat', fallback: { error: 'Chat request failed' } }
-  );
-});
-
-ipcMain.handle('ai-chat-stream', async (event, messages) => {
-  if (!aiEngine) {
-    mainWindow.webContents.send('ai-stream-error', 'AI engine not initialized');
-    return;
-  }
-  try {
-    await aiEngine.chatStream(messages, (token) => {
-      mainWindow.webContents.send('ai-stream-token', token);
-    }, () => {
-      mainWindow.webContents.send('ai-stream-end');
-    });
-  } catch (err) {
-    logger.error('ai', 'Stream chat error', { error: err.message });
-    mainWindow.webContents.send('ai-stream-error', err.message);
-  }
-});
-
-ipcMain.handle('ai-status', async () => {
-  if (!aiEngine) return { loaded: false };
-  return aiEngine.getStatus();
-});
-
-// ─── Memory Subsystem (Deferred to Phase 2/Python) ───────────────
-// ipcMain.handle('memory-start-conversation', () => memoryManager.startConversation());
+// ─── Removed IPC surface (Phase 0) ──────────────────────────────
+// System/process control, file access, screen capture, config writes and
+// the legacy JS AI engine (with its cloud router) were exposed to the
+// renderer but unused by the UI. They are gone; the UI talks only to the
+// Python backend, which enforces policy, confirmation and audit.
 
 // ─── App Lifecycle ──────────────────────────────────────────────
 app.whenReady().then(() => {
@@ -503,6 +359,13 @@ app.whenReady().then(() => {
     // Last resort — create window anyway
     createWindow();
   });
+
+  // Automated smoke test (tools/check.ps1): quit cleanly after N ms, so the
+  // backend shutdown and crash flag behave exactly like a normal user quit.
+  const quitAfterMs = parseInt(process.env.SENTINEL_SMOKE_QUIT_AFTER_MS || '', 10);
+  if (quitAfterMs > 0) {
+    setTimeout(() => { isQuitting = true; app.quit(); }, quitAfterMs);
+  }
 
   // OS Integration (Phase 7)
   // 1. Global Summon Hotkey
