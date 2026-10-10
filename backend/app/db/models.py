@@ -111,6 +111,17 @@ class FileAction(Base):
     status = Column(String, default="done")         # done | undone | final
 
 
+class PortfolioTransaction(Base):
+    """Portfolio Advisor: one buy / sell / dividend, used for the true yearly return (XIRR)."""
+    __tablename__ = "portfolio_transactions"
+    id = Column(String, primary_key=True)
+    holding_id = Column(String, index=True, nullable=False)
+    day = Column(String, nullable=False)          # ISO date
+    kind = Column(String, nullable=False)         # buy | sell | dividend
+    units = Column(Float, default=0.0)
+    amount = Column(Float, nullable=False)        # rupees paid (buy) or received (sell/dividend), always positive
+
+
 class PortfolioHistory(Base):
     """Portfolio Advisor: total value once per day (recorded when prices are refreshed)."""
     __tablename__ = "portfolio_history"

@@ -19,9 +19,9 @@ def portfolio_overview() -> str:
     s = snap["summary"]
     compact = {
         "profile": {k: snap["profile"].get(k) for k in ("risk", "horizon_years", "monthly_amount", "monthly_expenses", "emergency_fund", "goal")},
-        "totals": {k: s[k] for k in ("invested", "value", "gain", "gain_pct", "count", "priced")},
+        "totals": {k: s[k] for k in ("invested", "value", "gain", "gain_pct", "count", "priced", "xirr_pct", "xirr_note")},
         "allocation_pct": s["allocation_pct"],
-        "holdings": [{k: h[k] for k in ("name", "kind", "category", "units", "invested", "value", "gain_pct", "weight_pct")}
+        "holdings": [{k: h[k] for k in ("name", "kind", "category", "units", "invested", "value", "gain_pct", "xirr_pct", "weight_pct")}
                      for h in s["holdings"][:25]],
         "suggestions": [{k: x.get(k) for k in ("title", "detail", "reason", "steps")} for x in snap["suggestions"]],
         "disclaimer": snap["disclaimer"],

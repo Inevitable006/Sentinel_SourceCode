@@ -8,11 +8,14 @@ type Profile = { risk: 'conservative' | 'moderate' | 'aggressive'; horizon_years
 type HoldingIn = { kind: 'mf' | 'stock' | 'other'; name: string; symbol: string; isin: string; units: number; avg_cost: number;
   buy_date: string | null; category: 'equity' | 'debt' | 'hybrid' | 'gold' };
 type HoldingRow = HoldingIn & { id: string; invested: number; value: number; gain: number; gain_pct: number | null;
-  weight_pct: number; priced: boolean; price_date: string | null; price_source: string | null };
+  weight_pct: number; priced: boolean; price_date: string | null; price_source: string | null;
+  xirr_pct: number | null; transactions: number };
+type Tx = { id?: string; holding_id: string | null; day: string; kind: 'buy' | 'sell' | 'dividend'; units: number; amount: number;
+  name?: string; holding_name?: string | null };
 type Suggestion = { title: string; detail: string; reason: string; steps?: string[] };
 type Snapshot = { profile: Profile; disclaimer: string; suggestions: Suggestion[];
   summary: { holdings: HoldingRow[]; invested: number; value: number; gain: number; gain_pct: number | null;
-    allocation_pct: Record<string, number>; priced: number; count: number } };
+    allocation_pct: Record<string, number>; priced: number; count: number; xirr_pct: number | null; xirr_note: string } };
 type Projection = { total_paid: number; range: { pessimistic: number; expected: number; optimistic: number };
   assumed_annual_returns_pct: number[]; note: string };
 
@@ -29,7 +32,27 @@ const Portfolio: React.FC = () => {
   const [projection, setProjection] = useState<Projection | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [txFor, setTxFor] = useState<HoldingRow | null>(null);
+  const [txList, setTxList] = useState<Tx[]>([]);
+  const [txNew, setTxNew] = useState<Tx>({ holding_id: null, day: new Date().toISOString().slice(0, 10), kind: 'buy', units: 0, amount: 0 });
+  const [txPreview, setTxPreview] = useState<{ transactions: Tx[]; unmatched: string[] } | null>(null);
   const { run, prompt } = usePinAction(setMessage);
+
+  const openTx = async (h: HoldingRow) => {
+    setTxFor(h); setTxNew({ ...txNew, holding_id: h.id });
+    try { setTxList(await apiGet<Tx[]>(`/api/portfolio/transactions/${h.id}`)); } catch (e) { setMessage(e instanceof Error ? e.message : 'Failed.'); }
+  };
+
+  const importStatement = async (file: File) => {
+    const { port, token } = await backendInfo();
+    const res = await fetch(`http://127.0.0.1:${port}/api/portfolio/transactions/import/preview`, {
+      method: 'POST', headers: { 'X-Sentinel-Session': token, 'Content-Type': 'text/csv' }, body: file });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) { setMessage(String(body.detail || 'Could not read that statement.')); return; }
+    setTxPreview(body);
+    const linked = body.transactions.filter((t: Tx) => t.holding_id).length;
+    setMessage(`Found ${body.transactions.length} transaction(s); ${linked} match your holdings.${body.unmatched.length ? ' Add the other investments first, then import again.' : ''}`);
+  };
 
   const apply = (s: Snapshot) => { setSnap(s); setProfile(s.profile); };
   const load = useCallback(async () => {
@@ -69,6 +92,7 @@ const Portfolio: React.FC = () => {
           <dt>Invested</dt><dd>{inr(s.invested)}</dd>
           <dt>Current value</dt><dd>{inr(s.value)} {s.priced < s.count && <span className="ws-muted">({s.count - s.priced} without a current price; shown at cost)</span>}</dd>
           <dt>Gain / loss</dt><dd className={s.gain >= 0 ? 'ws-ok' : 'ws-bad'}>{inr(s.gain)} {s.gain_pct !== null && `(${s.gain_pct}%)`}</dd>
+          <dt>True yearly return (XIRR)</dt><dd>{s.xirr_pct !== null ? <span className={s.xirr_pct >= 0 ? 'ws-ok' : 'ws-bad'}>{s.xirr_pct}% a year</span> : '—'} <span className="ws-muted">{s.xirr_note}</span></dd>
           <dt>Mix</dt><dd>{Object.entries(s.allocation_pct).map(([k, v]) => `${k} ${v}%`).join(' · ') || '—'}</dd>
         </dl>
       )}
@@ -80,7 +104,51 @@ const Portfolio: React.FC = () => {
         }, 'Prices updated.')}>{busy ? 'Working…' : 'Refresh prices (goes online)'}</button>
         <label className="ws-file">Import CSV <input type="file" accept=".csv,text/csv" onChange={e => e.target.files?.[0] && importFile(e.target.files[0])} /></label>
         <button type="button" onClick={() => setAdding({ ...EMPTY })}>Add by hand</button>
+        <label className="ws-file">Import transactions CSV <input type="file" accept=".csv,text/csv" onChange={e => e.target.files?.[0] && importStatement(e.target.files[0])} /></label>
       </div>
+
+      {txPreview && (
+        <div className="ws-editor">
+          <strong>Transactions found</strong>
+          <ul className="ws-list">{txPreview.transactions.slice(0, 100).map((t, i) => (
+            <li key={i} className={`ws-item ${t.holding_id ? '' : 'ws-sev-warning'}`}>{t.day} · {t.kind} · {inr(t.amount)} · {t.holding_name ?? `${t.name} (no matching holding, will be skipped)`}</li>))}</ul>
+          <div className="ws-actions">
+            <button type="button" onClick={() => act(async () => {
+              const rows = txPreview.transactions.filter(t => t.holding_id).map(({ holding_id, day, kind, units, amount }) => ({ holding_id, day, kind, units, amount }));
+              const r = await apiPost<Snapshot & { added: number }>('/api/portfolio/transactions/import', { transactions: rows });
+              setTimeout(() => setMessage(`Added ${r.added} transaction(s); duplicates were skipped.`), 0);
+              return r;
+            }, 'Imported.').then(() => setTxPreview(null))}>Add the matched ones</button>
+            <button type="button" onClick={() => setTxPreview(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {txFor && (
+        <div className="ws-editor">
+          <strong>Transactions: {txFor.name}</strong>
+          {txList.length === 0 && <span className="ws-muted">None yet. Add each purchase (including every SIP instalment) for an accurate yearly return.</span>}
+          <ul className="ws-list">{txList.map(t => (
+            <li key={t.id} className="ws-item"><div className="ws-item-head">{t.day} · {t.kind} · {t.units ? `${t.units} units · ` : ''}{inr(t.amount)}
+              <button type="button" onClick={() => run(async (pin?: string) => {
+                apply(await apiPost(`/api/portfolio/transactions/${t.id}/delete`, { pin }));
+                setTxList(txList.filter(x => x.id !== t.id)); setMessage('Removed.');
+              })}>Remove</button></div></li>))}</ul>
+          <div className="ws-row">
+            <input type="date" value={txNew.day} onChange={e => setTxNew({ ...txNew, day: e.target.value })} />
+            <select value={txNew.kind} onChange={e => setTxNew({ ...txNew, kind: e.target.value as Tx['kind'] })}>
+              <option value="buy">Bought</option><option value="sell">Sold</option><option value="dividend">Dividend received</option>
+            </select>
+            <label>Units <input type="number" min="0" step="any" value={txNew.units || ''} onChange={e => setTxNew({ ...txNew, units: Number(e.target.value) })} /></label>
+            <label>Amount ₹ <input type="number" min="0" step="any" value={txNew.amount || ''} onChange={e => setTxNew({ ...txNew, amount: Number(e.target.value) })} /></label>
+            <button type="button" disabled={txNew.amount <= 0} onClick={async () => {
+              try { apply(await apiPost('/api/portfolio/transactions', txNew)); await openTx(txFor); setMessage('Transaction added.'); }
+              catch (e) { setMessage(e instanceof Error ? e.message : 'Failed.'); }
+            }}>Add</button>
+            <button type="button" onClick={() => setTxFor(null)}>Close</button>
+          </div>
+        </div>
+      )}
 
       {preview && (
         <div className="ws-editor">
@@ -123,14 +191,16 @@ const Portfolio: React.FC = () => {
 
       {s && s.holdings.length > 0 && (
         <table className="pf-table">
-          <thead><tr><th>Holding</th><th>Units</th><th>Invested</th><th>Value</th><th>Gain</th><th>Weight</th><th /></tr></thead>
+          <thead><tr><th>Holding</th><th>Units</th><th>Invested</th><th>Value</th><th>Gain</th><th>XIRR</th><th>Weight</th><th /></tr></thead>
           <tbody>{s.holdings.map(h => (
             <tr key={h.id}>
               <td>{h.name}<div className="ws-muted">{h.kind === 'mf' ? 'Fund' : h.kind === 'stock' ? 'Share' : 'Other'} · {h.category}{h.price_date ? ` · price ${h.price_date}` : ' · no price yet'}</div></td>
               <td>{h.units}</td><td>{inr(h.invested)}</td><td>{inr(h.value)}</td>
               <td className={h.gain >= 0 ? 'ws-ok' : 'ws-bad'}>{h.gain_pct !== null ? `${h.gain_pct}%` : '—'}</td>
+              <td>{h.xirr_pct !== null ? `${h.xirr_pct}%` : '—'}</td>
               <td>{h.weight_pct}%</td>
-              <td><button type="button" onClick={() => run(async (pin?: string) => {
+              <td><button type="button" onClick={() => openTx(h)}>Transactions ({h.transactions})</button>
+                <button type="button" onClick={() => run(async (pin?: string) => {
                 apply(await apiPost(`/api/portfolio/holdings/${h.id}/delete`, { pin })); setMessage('Removed.');
               })}>Remove</button></td>
             </tr>))}</tbody>

@@ -191,6 +191,114 @@ def project(monthly: float, years: float, lumpsum: float = 0.0, category: str = 
             "disclaimer": DISCLAIMER}
 
 
+# ── true yearly return (XIRR) ───────────────────────────────────
+def xirr(cashflows: List[tuple]) -> Optional[float]:
+    """Annual rate r where the sum of amount / (1+r)^(years since first flow) is zero.
+    cashflows: [(date, amount)] with money paid in negative and money received positive.
+    Bisection on a wide bracket: slow-ish but always converges when a root exists."""
+    flows = sorted((d, float(a)) for d, a in cashflows if a)
+    if len(flows) < 2 or not any(a < 0 for _, a in flows) or not any(a > 0 for _, a in flows):
+        return None
+    start = flows[0][0]
+    if (flows[-1][0] - start).days < 1:
+        return None
+
+    def npv(rate):
+        return sum(a / (1 + rate) ** ((d - start).days / 365.0) for d, a in flows)
+
+    low, high = -0.9999, 10.0
+    f_low, f_high = npv(low), npv(high)
+    if f_low * f_high > 0:
+        return None
+    for _ in range(200):
+        mid = (low + high) / 2
+        f_mid = npv(mid)
+        if abs(f_mid) < 1e-7:
+            break
+        if f_low * f_mid < 0:
+            high, f_high = mid, f_mid
+        else:
+            low, f_low = mid, f_mid
+    return (low + high) / 2
+
+
+def _to_date(text: str) -> Optional[date]:
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d %b %Y", "%Y/%m/%d", "%d-%b-%y"):
+        try:
+            return datetime.strptime(str(text).strip()[:11].strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def holding_xirr(transactions: List[dict], current_value: Optional[float], today: Optional[date] = None) -> Optional[float]:
+    """XIRR for one holding: buys out, sells/dividends in, today's value in (if still held)."""
+    flows = []
+    for t in transactions:
+        d = _to_date(t["day"])
+        if d is None:
+            continue
+        flows.append((d, -t["amount"] if t["kind"] == "buy" else t["amount"]))
+    if current_value:
+        flows.append((today or date.today(), current_value))
+    return xirr(flows)
+
+
+TX_ALIASES = {
+    "date": ["date", "transaction date", "trade date", "order date", "nav date"],
+    "name": ["scheme name", "scheme", "fund name", "instrument", "symbol", "stock name", "name", "security"],
+    "kind": ["transaction type", "type", "trade type", "transaction", "description", "buy/sell"],
+    "units": ["units", "quantity", "qty", "qty."],
+    "amount": ["amount", "amount (inr)", "value", "net amount", "trade value", "total"],
+    "price": ["nav", "price", "trade price", "rate"],
+}
+
+
+def _tx_kind(text: str) -> Optional[str]:
+    t = (text or "").lower()
+    if any(w in t for w in ("redemption", "redeem", "sell", "switch out", "switch-out", "swp")):
+        return "sell"
+    if any(w in t for w in ("dividend", "idcw paid", "payout")) and "reinvest" not in t:
+        return "dividend"
+    if any(w in t for w in ("purchase", "buy", "sip", "systematic", "switch in", "switch-in", "reinvest", "allot")):
+        return "buy"
+    return None
+
+
+def parse_transactions_csv(text: str) -> Dict:
+    """Reads a transaction statement (broker tradebook, CAMS/KFintech transactions as CSV, or any
+    sheet with date/name/type/units/amount columns). Returns {"transactions": [...], "skipped": [...]}."""
+    rows = list(csv.reader(io.StringIO(text.lstrip("﻿"))))
+    header_index, mapping = None, {}
+    for i, row in enumerate(rows[:30]):
+        normalized = [_norm(c) for c in row]
+        found = {}
+        for field, aliases in TX_ALIASES.items():
+            for alias in aliases:
+                if alias in normalized and normalized.index(alias) not in found.values():
+                    found[field] = normalized.index(alias)
+                    break
+        if {"date", "name", "kind"} <= set(found) and ("amount" in found or ("units" in found and "price" in found)):
+            header_index, mapping = i, found
+            break
+    if header_index is None:
+        raise ValueError("Could not find date, name, transaction type and amount columns in this statement.")
+    out, skipped = [], []
+    for n, row in enumerate(rows[header_index + 1:], start=header_index + 2):
+        get = lambda f: row[mapping[f]].strip() if f in mapping and mapping[f] < len(row) else ""
+        d, kind, name = _to_date(get("date")), _tx_kind(get("kind")), get("name")
+        units = abs(_number(get("units")) or 0.0)
+        amount = _number(get("amount"))
+        if amount is None and units and _number(get("price")):
+            amount = units * _number(get("price"))
+        if not (d and kind and name and amount):
+            if any(c.strip() for c in row):
+                skipped.append(n)
+            continue
+        out.append({"day": d.isoformat(), "name": name, "kind": kind, "units": units, "amount": abs(amount)})
+    return {"transactions": out, "skipped": skipped}
+
+
 # ── suggestions (rule-based, explainable) ───────────────────────
 def target_equity(profile: dict) -> float:
     base = RISK_TARGETS.get(profile.get("risk", "moderate"), 0.6)

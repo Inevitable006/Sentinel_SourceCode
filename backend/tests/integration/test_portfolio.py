@@ -170,3 +170,55 @@ def test_amfi_new_layout_and_safe_name_matching():
     assert pf.match_fund("Parag Parikh Flexi Cap Fund Regular Growth", navs)["nav"] == 80.9756
     assert pf.match_fund("Parag Parikh Flexi Cap Fund Direct IDCW", navs) is None     # different option: no guess
     assert pf.match_fund("Some Other Fund Direct Growth", navs) is None
+
+
+# ── transactions and XIRR ───────────────────────────────────────
+from datetime import date as _date
+
+
+def test_xirr_known_answers():
+    assert pf.xirr([(_date(2020, 1, 1), -10000), (_date(2021, 1, 1), 11000)]) == pytest.approx(0.0997, abs=0.0005)  # 366-day leap year
+    assert pf.xirr([(_date(2021, 1, 1), -10000), (_date(2022, 1, 1), 9000)]) == pytest.approx(-0.10, abs=0.0005)
+    sip = [(_date(2025, m, 1), -1000) for m in range(1, 13)] + [(_date(2025, 12, 31), 12800)]
+    assert pf.xirr(sip) == pytest.approx(0.1255, abs=0.001)
+    assert pf.xirr([(_date(2025, 1, 1), -1000)]) is None              # no money back yet: no answer, not a guess
+
+
+CAMS_TX = """Date,Scheme Name,Transaction Type,Units,NAV,Amount
+05-Jan-2025,Parag Parikh Flexi Cap Fund Direct Growth,SIP Purchase,12.5,80,1000
+05-Feb-2025,Parag Parikh Flexi Cap Fund Direct Growth,SIP Purchase,12.2,82,1000
+10-Mar-2025,Parag Parikh Flexi Cap Fund Direct Growth,Redemption,5,85,425
+10-Mar-2025,Unknown Fund Direct Growth,Purchase,1,10,10
+,,Opening balance,,,
+"""
+
+
+def test_statement_parsing():
+    parsed = pf.parse_transactions_csv(CAMS_TX)
+    kinds = [(t["day"], t["kind"], t["amount"]) for t in parsed["transactions"]]
+    assert kinds[:3] == [("2025-01-05", "buy", 1000), ("2025-02-05", "buy", 1000), ("2025-03-10", "sell", 425)]
+    assert parsed["skipped"] == [6]          # the "Opening balance" line (line 6) is not a transaction
+
+
+def test_transactions_api_and_xirr(web):
+    client, routes = web
+    snap = client.post("/api/portfolio/holdings", headers=H, json={
+        "kind": "mf", "name": "Parag Parikh Flexi Cap Fund Direct Growth", "units": 19.7, "avg_cost": 81, "category": "equity"}).json()
+    hid = snap["summary"]["holdings"][0]["id"]
+    assert snap["summary"]["xirr_pct"] is None and "Add or import" in snap["summary"]["xirr_note"]
+    preview = client.post("/api/portfolio/transactions/import/preview", headers={**H, "Content-Type": "text/csv"}, content=CAMS_TX.encode()).json()
+    assert [t["holding_id"] for t in preview["transactions"]] == [hid, hid, hid, None]
+    assert preview["unmatched"] == ["Unknown Fund Direct Growth"]
+    rows = [{k: t[k] for k in ("holding_id", "day", "kind", "units", "amount")} for t in preview["transactions"] if t["holding_id"]]
+    result = client.post("/api/portfolio/transactions/import", headers=H, json={"transactions": rows}).json()
+    assert result["added"] == 3 and result["summary"]["holdings"][0]["transactions"] == 3
+    assert result["summary"]["xirr_pct"] is not None
+    again = client.post("/api/portfolio/transactions/import", headers=H, json={"transactions": rows}).json()
+    assert again["added"] == 0                                           # importing twice adds nothing twice
+    txs = client.get(f"/api/portfolio/transactions/{hid}", headers=H).json()
+    assert len(txs) == 3
+    client.post(f"/api/portfolio/holdings/{hid}/delete", headers=H, json={})
+    from app.db.database import SessionLocal
+    from app.db.models import PortfolioTransaction
+    with SessionLocal() as db:
+        assert db.query(PortfolioTransaction).count() == 0              # removed with the holding
