@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, backendInfo } from '../../lib/backend';
 import { usePinAction } from '../Workspace/usePinAction';
 import '../Workspace/Workspace.css';
+import TaxPanel from './TaxPanel';
 
 type Profile = { risk: 'conservative' | 'moderate' | 'aggressive'; horizon_years: number; monthly_amount: number;
-  monthly_expenses: number; emergency_fund: number; goal: string; set?: boolean };
+  monthly_expenses: number; emergency_fund: number; goal: string; tax_slab_pct: number; set?: boolean };
 type HoldingIn = { kind: 'mf' | 'stock' | 'other'; name: string; symbol: string; isin: string; units: number; avg_cost: number;
   buy_date: string | null; category: 'equity' | 'debt' | 'hybrid' | 'gold' };
 type HoldingRow = HoldingIn & { id: string; invested: number; value: number; gain: number; gain_pct: number | null;
@@ -207,6 +208,8 @@ const Portfolio: React.FC = () => {
         </table>
       )}
 
+      <TaxPanel refreshKey={snap} />
+
       <h3>Suggestions</h3>
       {!profile?.set && <p className="ws-bad">Fill in "About you" below for suggestions that fit you.</p>}
       <ul className="ws-list">
@@ -250,6 +253,10 @@ const Portfolio: React.FC = () => {
             <label>Can invest per month ₹ <input type="number" min="0" value={profile.monthly_amount} onChange={e => setProfile({ ...profile, monthly_amount: Number(e.target.value) })} /></label>
             <label>Monthly expenses ₹ <input type="number" min="0" value={profile.monthly_expenses} onChange={e => setProfile({ ...profile, monthly_expenses: Number(e.target.value) })} /></label>
             <label>Emergency savings ₹ <input type="number" min="0" value={profile.emergency_fund} onChange={e => setProfile({ ...profile, emergency_fund: Number(e.target.value) })} /></label>
+            <label>Income-tax slab %
+              <select value={profile.tax_slab_pct} onChange={e => setProfile({ ...profile, tax_slab_pct: Number(e.target.value) })}>
+                {[0, 5, 10, 15, 20, 25, 30].map(v => <option key={v} value={v}>{v}%</option>)}
+              </select></label>
           </div>
           <input placeholder="Goal (optional), e.g. house down payment in 2031" value={profile.goal} maxLength={300} onChange={e => setProfile({ ...profile, goal: e.target.value })} />
           <div className="ws-actions"><button type="button" onClick={() => act(() => apiPost('/api/portfolio/profile', profile), 'Saved.')}>Save</button></div>

@@ -21,6 +21,7 @@ class ProfileBody(BaseModel):
     monthly_expenses: float = Field(0, ge=0, le=10_000_000)
     emergency_fund: float = Field(0, ge=0, le=1_000_000_000)
     goal: str = Field("", max_length=300)
+    tax_slab_pct: float = Field(30, ge=0, le=45)    # income-tax slab used for debt funds and short-term gold
 
 
 class HoldingBody(BaseModel):
@@ -145,6 +146,15 @@ def record_history(summary: dict, day: Optional[str] = None) -> None:
         row = db.get(PortfolioHistory, day) or PortfolioHistory(day=day, value=0, invested=0)
         row.value, row.invested = summary["value"], summary["invested"]
         db.merge(row); db.commit()
+
+
+def tax_snapshot() -> dict:
+    from app.core import tax_in
+    with SessionLocal() as db:
+        holdings = [_holding_dict(h) for h in db.query(Holding).all()]
+        profile = load_profile(db)
+        tx = _transactions(db)
+    return tax_in.estimate(holdings, tx, float(profile.get("tax_slab_pct", 30)))
 
 
 def create_portfolio_router(verify_session_token, require_pin):
@@ -302,6 +312,11 @@ def create_portfolio_router(verify_session_token, require_pin):
                     existing.add(key); added += 1
             db.commit()
         return {**portfolio_snapshot(), "added": added}
+
+    @router.get("/tax")
+    def tax():
+        unlocked()
+        return tax_snapshot()
 
     @router.post("/refresh-prices")
     async def refresh():

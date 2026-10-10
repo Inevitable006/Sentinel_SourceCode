@@ -1,0 +1,12 @@
+{
+  "country": "India",
+  "label": "Capital gains rules after the 23 July 2024 Budget (FY 2024-25 onward)",
+  "verify_note": "Rules change with each Budget. Check these values against the current Income Tax rules before relying on them.",
+  "cess_pct": 4,
+  "equity": {"long_term_after_months": 12, "short_term_pct": 20, "long_term_pct": 12.5, "yearly_exemption": 125000},
+  "debt_after_2023_04_01": {"taxed_at_slab": true},
+  "debt_before_2023_04_01": {"long_term_after_months": 24, "long_term_pct": 12.5},
+  "gold": {"long_term_after_months": 24, "long_term_pct": 12.5},
+  "hybrid_treated_as": "equity",
+  "dividends": "taxed_at_slab"
+}
