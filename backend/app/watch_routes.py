@@ -24,6 +24,12 @@ def create_watch_router(verify_session_token, require_pin):
         require_unlocked()
         return {**system_watch.status(), "defender_scan": dict(_scan)}
 
+    @router.get("/activity")
+    async def activity(days: float = 7):
+        require_unlocked()
+        from app.core.activity import activity_with_integrity
+        return await asyncio.to_thread(activity_with_integrity, max(1, min(days, 90)))
+
     @router.post("/check")
     async def check():
         require_unlocked()

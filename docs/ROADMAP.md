@@ -96,7 +96,7 @@ Advisor, not trader: Sentinel analyses and recommends; the owner moves money. No
 One profession at a time, each a pack of knowledge + tools + checks + tests: finance (Phase 9) → coding → research/writing → marketing/business → technical. Where a local model cannot be reliable (medical, legal judgement), Sentinel says so and points to a professional instead of guessing.
 
 ### Idea backlog (from the 2026-10-10 review; not scheduled)
-✅ daily briefing (done 2026-10-10) · ✅ encrypted backup/restore (done 2026-10-10) · ✅ file actions with preview and 5-minute undo (done 2026-10-10; resolves PDF p44) · readable "why did Sentinel do this" view over the audit log · per-skill rate limits. Not planned as written: absolute "unhackable / zero impact / guaranteed truth" claims, autonomous trading, an unstoppable watchdog, cloud AI fallback, a Rust/Tauri rewrite. Separate future projects: creative studio, health tracking, multi-user, phone sync.
+✅ daily briefing (done 2026-10-10) · ✅ encrypted backup/restore (done 2026-10-10) · ✅ file actions with preview and 5-minute undo (done 2026-10-10; resolves PDF p44) · ✅ readable "what did Sentinel do" view over the audit log (done 2026-10-10) · per-skill rate limits. Not planned as written: absolute "unhackable / zero impact / guaranteed truth" claims, autonomous trading, an unstoppable watchdog, cloud AI fallback, a Rust/Tauri rewrite. Separate future projects: creative studio, health tracking, multi-user, phone sync.
 
 ## 5. How we work (token-efficient)
 - **Claude:** design, security-critical code, reviews. Edits the repo directly through the linked folder (plain text, the cheapest path). Doesn't drive other AIs by screen control (a screenshot costs ~1.5k tokens).

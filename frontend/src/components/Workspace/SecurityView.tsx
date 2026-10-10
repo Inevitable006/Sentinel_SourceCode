@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, notifyLockStateChanged } from '../../lib/backend';
 import { usePinAction } from './usePinAction';
 import SystemWatchPanel from './SystemWatchPanel';
+import ActivityPanel from './ActivityPanel';
 import './Workspace.css';
 
 type Skill = { name: string; description: string; enabled: boolean; execution: string; capabilities: string[] };
@@ -29,6 +30,7 @@ const SecurityView: React.FC = () => {
   return (
     <div className="ws-container glass-panel">
       <SystemWatchPanel />
+      <ActivityPanel />
       <h3>Privacy</h3>
       <div role="status" aria-live="polite" className="ws-message">{message}</div>
       {prompt}
