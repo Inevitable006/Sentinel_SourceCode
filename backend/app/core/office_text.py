@@ -62,6 +62,43 @@ def docx_text(path: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", out).strip()
 
 
+MAX_PDF_PAGES = 50
+
+
+def pdf_text(path: str) -> str:
+    """Text layer of a PDF (pypdf). Scanned PDFs have no text layer; that is said plainly."""
+    import os
+    if os.path.getsize(path) > MAX_ARCHIVE_BYTES:
+        raise OfficeError("The PDF is larger than 25 MB.")
+    try:
+        from pypdf import PdfReader
+        from pypdf.errors import PdfReadError
+    except ImportError:
+        raise OfficeError("PDF support is not installed.") from None
+    try:
+        reader = PdfReader(path, strict=False)
+        if reader.is_encrypted:
+            raise OfficeError("The PDF is password-protected; Sentinel does not open protected files.")
+        out, total = [], 0
+        for n, page in enumerate(reader.pages):
+            if n >= MAX_PDF_PAGES:
+                out.append(f"… (only the first {MAX_PDF_PAGES} pages were read)")
+                break
+            text = (page.extract_text() or "").strip()
+            if text:
+                out.append(f"## Page {n + 1}\n{text}")
+                total += len(text)
+            if total > MAX_CHARS * 2:
+                break
+    except OfficeError:
+        raise
+    except (PdfReadError, ValueError, KeyError, TypeError):
+        raise OfficeError("The file is not a readable PDF.") from None
+    if not out:
+        return "(This PDF has no text layer; it is probably a scan. Reading scanned pages needs OCR, which is not available yet.)"
+    return "\n\n".join(out)
+
+
 def _col_index(ref: str) -> int:
     letters = re.match(r"[A-Z]+", ref or "A").group(0)
     n = 0

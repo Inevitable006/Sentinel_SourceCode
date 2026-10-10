@@ -8,9 +8,7 @@ Speech uses the multilingual Whisper base model with CPU int8 and four threads, 
 
 ## Current status (2026-10-10)
 
-The speech libraries now import (the earlier Application Control block no longer occurs), but the installed model folder `backend/models/faster-whisper-base` is incomplete: it has `model.bin`, `config.json` and `tokenizer.json`, while CTranslate2 also needs the model's vocabulary file and reports “Cannot load the vocabulary from the model directory”.
-
-Readiness is now honest: the status check actually loads the model once, so Dictation shows **unavailable** until the model really loads. To finish: add the missing vocabulary file from the same model release, add its SHA-256 to `backend/speech-model.json`, then run the synthetic smoke test below. The smoke test no longer depends on PyAV's changed `open()` API. Physical microphone capture and recognition quality remain unverified until then.
+Working. The missing `vocabulary.txt` was downloaded from the pinned model revision, matched its published size and git fingerprint, and is now pinned by SHA-256 in `backend/speech-model.json`. The real offline synthetic smoke test passes (exact transcript, network blocked, no microphone). Physical microphone quality is still to be checked by the owner.
 
 Text-to-speech stops immediately (queued sentences discarded) when Sentinel locks, on Emergency stop, or when Voice is turned off.
 

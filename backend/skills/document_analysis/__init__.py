@@ -1,6 +1,6 @@
 """
 Skill: document_analysis
-Reads and extracts text from local files (TXT, CSV, JSON, MD, DOCX, XLSX) with strict path containment.
+Reads and extracts text from local files (TXT, CSV, JSON, MD, DOCX, XLSX, PDF) with strict path containment.
 Risk Tier: 2 (requires user confirmation for privacy)
 Capabilities: None
 """
@@ -49,10 +49,10 @@ def read_document(file_path: str) -> str:
         return failed(f"Error: File not found or is not a regular file: {file_path}")
 
     suffix = Path(file_path).suffix.lower()
-    if suffix in (".docx", ".xlsx"):
-        from app.core.office_text import OfficeError, docx_text, xlsx_text
+    if suffix in (".docx", ".xlsx", ".pdf"):
+        from app.core.office_text import OfficeError, docx_text, xlsx_text, pdf_text
         try:
-            text = docx_text(file_path) if suffix == ".docx" else xlsx_text(file_path)
+            text = {".docx": docx_text, ".xlsx": xlsx_text, ".pdf": pdf_text}[suffix](file_path)
         except OfficeError as e:
             return failed(f"Error: {e}")
         except Exception as e:
@@ -60,8 +60,8 @@ def read_document(file_path: str) -> str:
         if len(text) > 10240:
             return text[:10240] + "\n... [TRUNCATED: Output exceeded 10KB limit]"
         return text or "(The document has no text.)"
-    if suffix in (".pdf", ".doc", ".xls", ".ppt", ".pptx"):
-        return failed(f"Error: reading {suffix} files is not supported yet. Save it as .docx, .xlsx or .txt.")
+    if suffix in (".doc", ".xls", ".ppt", ".pptx"):
+        return failed(f"Error: reading {suffix} files is not supported yet. Save it as .docx, .xlsx, .pdf or .txt.")
 
     try:
         # Detect encoding simply by trying utf-8 then falling back to latin-1

@@ -115,7 +115,7 @@ def test_missing_tokenizer_blocks_model_loading(tmp_path, monkeypatch):
 def test_model_integrity_rejects_changed_file(tmp_path, monkeypatch):
     import hashlib
     import json
-    names = ("model.bin", "config.json", "tokenizer.json")
+    names = ("model.bin", "config.json", "tokenizer.json", "vocabulary.txt")
     expected = {}
     for name in names:
         (tmp_path / name).write_bytes(b"original")
@@ -132,7 +132,7 @@ def test_model_integrity_rejects_changed_file(tmp_path, monkeypatch):
 
 def test_blocked_runtime_is_unavailable_before_microphone_use(tmp_path, monkeypatch):
     import builtins
-    for name in ("model.bin", "config.json", "tokenizer.json"):
+    for name in ("model.bin", "config.json", "tokenizer.json", "vocabulary.txt"):
         (tmp_path / name).write_bytes(b"test")
     monkeypatch.setattr(speech, "MODEL_DIR", tmp_path)
     monkeypatch.setattr(speech.importlib.util, "find_spec", lambda name: object())
@@ -200,7 +200,7 @@ def test_lock_and_unlock_cycle_invalidates_pending_request(client, monkeypatch):
 def _pinned_model(tmp_path, monkeypatch):
     import hashlib
     import json
-    names = ("model.bin", "config.json", "tokenizer.json")
+    names = ("model.bin", "config.json", "tokenizer.json", "vocabulary.txt")
     for name in names:
         (tmp_path / name).write_bytes(name.encode())
     manifest = tmp_path / "manifest.json"

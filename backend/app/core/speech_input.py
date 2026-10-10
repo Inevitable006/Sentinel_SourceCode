@@ -17,7 +17,7 @@ MODEL_MANIFEST = Path(__file__).resolve().parents[2] / "speech-model.json"
 def verify_model():
     try:
         expected = json.loads(MODEL_MANIFEST.read_text(encoding="utf-8"))["files"]
-        for name in ("model.bin", "config.json", "tokenizer.json"):
+        for name in ("model.bin", "config.json", "tokenizer.json", "vocabulary.txt"):
             digest = hashlib.sha256()
             with (MODEL_DIR / name).open("rb") as stream:
                 for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -65,7 +65,7 @@ class SpeechInput:
         self.epoch += 1
 
     def status(self):
-        files = ("model.bin", "config.json", "tokenizer.json")
+        files = ("model.bin", "config.json", "tokenizer.json", "vocabulary.txt")
         if not all((MODEL_DIR / name).is_file() for name in files):
             reason = "The local speech model has not been installed. See docs/VOICE.md."
         elif importlib.util.find_spec("faster_whisper") is None:

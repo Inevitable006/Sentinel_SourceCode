@@ -23,3 +23,4 @@ nvidia-cuda-nvrtc-cu12==12.9.86
 nvidia-ml-py==13.615.71     # GPU stats via NVML (no nvidia-smi process per poll)
 cryptography==50.0.1        # AES-GCM + Argon2id for the owner unlock (no network use)
 sqlcipher3-wheels==0.5.7    # SQLCipher: encrypted SQLite database (import name: sqlcipher3)
+pypdf==5.4.0               # text from PDF documents (pure Python, no network use)

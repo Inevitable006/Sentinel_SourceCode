@@ -67,6 +67,39 @@ def test_skill_reads_from_sentinel_workspace(tmp_path, monkeypatch):
     from skills.document_analysis import read_document
     assert "Sales rose 12%." in read_document("plan.docx")
     pdf = read_document("scan.pdf")
-    assert is_failure(pdf) and "not supported yet" in pdf
+    assert is_failure(pdf) and "not a readable PDF" in pdf          # a broken PDF is refused plainly
     outside = read_document(str(tmp_path.parent / "elsewhere.docx"))
     assert is_failure(outside)
+
+
+def minimal_pdf(text: str) -> bytes:
+    """A tiny one-page PDF with a real text layer (byte offsets computed so the xref is valid)."""
+    stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
+    objects = [b"<< /Type /Catalog /Pages 2 0 R >>",
+               b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+               b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+               b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+               b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, offsets = bytearray(b"%PDF-1.4\n"), []
+    for i, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return bytes(out)
+
+
+def test_pdf_text(tmp_path):
+    from app.core.office_text import pdf_text
+    path = tmp_path / "letter.pdf"
+    path.write_bytes(minimal_pdf("Invoice total 4200 rupees"))
+    assert pdf_text(str(path)) == "## Page 1\nInvoice total 4200 rupees"
+
+
+def test_pdf_without_text_is_explained(tmp_path):
+    from app.core.office_text import pdf_text
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(minimal_pdf(""))
+    assert "no text layer" in pdf_text(str(path))
