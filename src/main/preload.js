@@ -22,5 +22,21 @@ contextBridge.exposeInMainWorld('sentinel', {
   auth: {
     getSessionToken: () => ipcRenderer.invoke('auth-get-session-token'),
     getBackendPort: () => ipcRenderer.invoke('auth-get-backend-port')
+  },
+
+  // ── Backend lifecycle (receive-only) ──
+  backend: {
+    // Called once if the backend could not be (re)started and Sentinel entered Safe Mode.
+    onFatalError: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on('backend-fatal-error', handler);
+      return () => ipcRenderer.removeListener('backend-fatal-error', handler);
+    },
+    // Called when Windows lock / sleep locked Sentinel, so the UI re-checks immediately.
+    onLocked: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on('sentinel-locked', handler);
+      return () => ipcRenderer.removeListener('sentinel-locked', handler);
+    }
   }
 });

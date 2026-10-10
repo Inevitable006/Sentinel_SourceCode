@@ -1,0 +1,14 @@
+# T-03: Local microphone dictation
+
+- **Goal:** Deliver the first Phase 2 voice feature: explicit microphone recording, local transcription, editable draft, cancellation and clear setup/errors.
+- **Branch:** `phase1/security`, preserving existing uncommitted work.
+- **Authorization:** Owner requested continuation of voice support on 2026-10-03. This card scopes the required API and Electron permission integration.
+- **Files you may change:** New speech service/router/tests and frontend dictation component; `backend/app/main.py` only to register the authenticated router; `src/main/main.js` and `src/main/core/media-permissions.js` only for narrow microphone permissions; `tools/check.ps1` to run voice tests; dependency pins, model ignore rules and phase documentation.
+- **Dependencies:** `faster-whisper==1.2.1`, `ctranslate2==4.8.2`; transitive versions recorded after installation. Local multilingual base model from SYSTRAN/faster-whisper-base, revision recorded after provisioning.
+- **Boundaries:** No runtime downloads or cloud recognition. Audio exists in memory only; 30-second PCM WAV limit. Authenticated, unlocked requests only. Do not auto-send transcripts or treat voice as identity/approval. Serialize recognition off the event loop. CPU int8 first to preserve GPU headroom; GPU STT, wake word, voice identity, Hello and Piper remain separate work.
+- **Acceptance:** Regression tests for audio limits/format, lock/auth, concurrent requests and no-download configuration; frontend build; real local model transcription using synthetic speech; renderer microphone permission scoped to trusted main frame and audio only.
+- **Report:** Dictation UI, authenticated/unlocked API, bounded WAV validation, offline-only inference, model hash verification, resource gates, lock invalidation and microphone permission boundaries implemented. Packages and multilingual base model installed locally. Runtime smoke blocked by Windows Application Control on PyAV 19.0.1; no security settings changed. Typed chat remains available. Not complete for live use; see `docs/VOICE.md`. Final test results recorded below after the final run.
+  - Final check (2026-10-03 17:01 IST): frontend typecheck/build, Electron syntax and all 11 JavaScript audio/permission tests passed; full backend and 13/13 memory acceptance checks passed. Evidence: `docs/runs/check_20261003_170132.txt`.
+  - `pip check`: no broken requirements. `git diff --check`: passed.
+  - Live smoke: failed at PyAV native import with Application Control error; physical microphone and recognition accuracy unverified. The UI checks runtime readiness before requesting microphone access.
+  - Model revision `ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66`; required files downloaded with recorded SHA-256 hashes. Remaining identity features are not represented as complete. No commit or push.

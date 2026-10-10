@@ -2,6 +2,7 @@ import socket
 import ipaddress
 import urllib.parse
 import httpx
+import httpcore
 from typing import Optional
 
 from app.core.egress import egress_guard
@@ -64,24 +65,108 @@ def resolve_and_validate_url(url: str) -> tuple[bool, Optional[str], Optional[st
         return False, None, str(e)
 
 
+# Largest response body a tool may download. Bodies are read in chunks and the download is
+# aborted once this is exceeded; nothing larger is ever held in memory.
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+
+
+class ResponseTooLarge(ValueError):
+    pass
+
+
+class _PinnedBackend(httpcore.AsyncNetworkBackend):
+    """Opens TCP connections only to the address that was validated for each hostname.
+    The URL keeps the real hostname, so TLS SNI and certificate checks still use it;
+    only the TCP destination is fixed. A second (possibly rebinding) DNS lookup never happens."""
+
+    def __init__(self):
+        self.pins: dict[str, str] = {}
+        self._inner = httpcore.AnyIOBackend()
+
+    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        ip = self.pins.get(host.lower() if isinstance(host, str) else host)
+        if ip is None:
+            raise httpcore.ConnectError(f"No validated address for {host}; connection refused.")
+        return await self._inner.connect_tcp(ip, port, timeout=timeout, local_address=local_address,
+                                             socket_options=socket_options)
+
+    async def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        raise httpcore.ConnectError("Unix sockets are not allowed.")
+
+    async def sleep(self, seconds):
+        await self._inner.sleep(seconds)
+
+
+class _LimitedStream(httpx.AsyncByteStream):
+    """Counts bytes as they arrive and aborts the download once the budget is exceeded."""
+
+    def __init__(self, inner, max_bytes: int):
+        self._inner, self._max = inner, max_bytes
+
+    async def __aiter__(self):
+        seen = 0
+        async for chunk in self._inner:
+            seen += len(chunk)
+            if seen > self._max:
+                raise ResponseTooLarge(f"Response exceeded the {self._max // 1024} KB limit and was stopped.")
+            yield chunk
+
+    async def aclose(self):
+        await self._inner.aclose()
+
+
+class _LimitedTransport(httpx.AsyncBaseTransport):
+    """Wraps the real transport so every response body is size-limited while it is read."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport):
+        self._inner = inner
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        response = await self._inner.handle_async_request(request)
+        limit = request.extensions.get("sentinel_max_bytes", MAX_RESPONSE_BYTES)
+        return httpx.Response(response.status_code, headers=response.headers,
+                              stream=_LimitedStream(response.stream, limit), extensions=response.extensions)
+
+    async def aclose(self):
+        await self._inner.aclose()
+
+
 class SafeAsyncClient(httpx.AsyncClient):
     """
     An async client that enforces the egress guard (app.core.egress) and strict SSRF protections.
-    It overrides the request method to validate and pin the IP before fetching.
+    Every hop is validated, the connection goes to the validated IP (no DNS rebinding window),
+    TLS is verified against the original hostname, and response bodies are size-limited
+    while they download (uncompressed responses are requested, so the limit is the real size).
     """
     def __init__(self, *args, **kwargs):
         kwargs["trust_env"] = False
         # Disable redirects at the client level to handle them manually with re-validation
-        kwargs["follow_redirects"] = False 
+        kwargs["follow_redirects"] = False
+        self._pinned_backend = _PinnedBackend()
+        transport = kwargs.get("transport")
+        if transport is None:   # tests pass an in-memory MockTransport; real use never does
+            transport = httpx.AsyncHTTPTransport()
+            pool = getattr(transport, "_pool", None)
+            if pool is None or not hasattr(pool, "_network_backend"):
+                raise RuntimeError("HTTP transport does not support address pinning; refusing to make requests.")
+            pool._network_backend = self._pinned_backend
+        kwargs["transport"] = _LimitedTransport(transport)
         super().__init__(*args, **kwargs)
 
     async def safe_request(self, method: str, url: str, **kwargs) -> httpx.Response:
         """
-        Executes a request with DNS pinning and manual redirect traversal.
+        Executes a request with DNS pinning, a response size budget and manual redirect traversal.
         """
         max_redirects = kwargs.pop("max_redirects", 3)
+        max_bytes = kwargs.pop("max_bytes", MAX_RESPONSE_BYTES)
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers["Accept-Encoding"] = "identity"   # no compression: the byte limit is the real size
+        kwargs["headers"] = headers
+        extensions = dict(kwargs.pop("extensions", None) or {})
+        extensions["sentinel_max_bytes"] = max_bytes
+        kwargs["extensions"] = extensions
         current_url = url
-        
+
         for attempt in range(max_redirects + 1):
             # Egress guard first: a blocked host is never even resolved. Raises EgressBlocked.
             rec = egress_guard.check(method, urllib.parse.urlparse(current_url).hostname)
@@ -90,37 +175,12 @@ class SafeAsyncClient(httpx.AsyncClient):
                 egress_guard.record_result(rec, blocked_reason=f"SSRF protection: {error}")
                 raise ValueError(f"SSRF blocked: {error}")
 
-            parsed = urllib.parse.urlparse(current_url)
-            
-            # Reconstruct URL with IP to prevent DNS rebinding
-            # Enclose IPv6 in brackets
-            ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
-            pinned_url = urllib.parse.urlunparse(
-                (parsed.scheme, ip_host, parsed.path, parsed.params, parsed.query, parsed.fragment)
-            )
+            hostname = urllib.parse.urlparse(current_url).hostname.lower()
+            self._pinned_backend.pins[hostname] = pinned_ip
 
-            # Pass the original hostname in headers
-            headers = kwargs.pop("headers", {})
-            # Ensure headers is dict-like and case-insensitive via httpx.Headers if needed, 
-            # but standard dict is fine for Host.
-            if "host" not in {k.lower() for k in headers.keys()}:
-                headers["Host"] = parsed.hostname
-            kwargs["headers"] = headers
-
-            # In httpx, to verify TLS for the original hostname when connecting to an IP,
-            # we must pass the original hostname via extensions/sni. 
-            # However, providing standard url with Host header often fails TLS validation 
-            # unless we use a custom SSL context or transport.
-            # Since full direct-IP SNI pinning is deferred by user request, 
-            # we will just connect to the original URL but we've already validated it.
-            # The user explicitly said: "Treat direct-IP HTTPS/SNI pinning as deferred work... 
-            # Do not use a Host-header workaround that risks TLS hostname-verification errors."
-            # So we will revert to connecting to the original URL, but ONLY after resolving it 
-            # and ensuring it's safe.
-            
             try:
                 response = await self.request(method, current_url, **kwargs)
-            except BaseException as e:   # includes cancellation
+            except BaseException as e:   # includes cancellation and oversized bodies
                 egress_guard.record_result(rec, error=type(e).__name__)
                 raise
             egress_guard.record_result(rec, status=response.status_code, bytes_in=len(response.content))
@@ -134,7 +194,7 @@ class SafeAsyncClient(httpx.AsyncClient):
                 # Resolve relative redirects
                 current_url = urllib.parse.urljoin(current_url, location)
                 continue
-            
+
             return response
-            
+
         raise ValueError("Unexpected redirect loop termination")

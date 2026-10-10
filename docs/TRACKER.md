@@ -6,7 +6,7 @@ Live status of the work. Claude updates it as each step finishes.
 - Plan and decisions: `docs/ROADMAP.md`
 - What changed, in plain words: `CHANGELOG.md`
 
-_Last updated: 2026-09-27_
+_Last updated: 2026-10-03. Verification checkpoint: `docs/tasks/T-02-verification.md`._
 
 ## Needs you (owner)
 | # | What | Why | Status |
@@ -37,8 +37,8 @@ _Last updated: 2026-09-27_
 ## Later phases
 | Phase | Scope | Status |
 |---|---|---|
-| 1b | GPU sidecar (D1): 7B models at ~44 tok/s | ⏳ next |
-| 2 | Voice & identity (wake word, speech-to-text, voice ID, Windows Hello option) | 💤 |
+| 1b | GPU sidecar (D1): local implementation verified | ✅ 324 tests, 13 memory checks, frontend build and real 7B GPU chat passed 2026-10-03; changes remain uncommitted |
+| 2 | Voice & identity | 🔄 Local dictation implemented; real runtime blocked by Windows Application Control (PyAV). See `docs/VOICE.md`. Wake word, voice ID and Hello remain pending. |
 | 3 | Smarter brain: planner, tool calling, prompt-injection defense, file search | 💤 |
 | 4 | System control & automation (undo, scheduler, emergency stop) | 💤 |
 | 5 | Skills, each in its own process | 💤 |

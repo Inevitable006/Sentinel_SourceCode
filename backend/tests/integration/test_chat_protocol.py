@@ -27,15 +27,19 @@ class Socket:
         self.sent = []
         self.received = False
         self.subprotocol = None
+        self.finished = asyncio.Event()
 
     async def accept(self, subprotocol=None):
         self.subprotocol = subprotocol
 
     async def send_json(self, payload):
         self.sent.append(payload)
+        if payload.get("state") in ("COMPLETED", "CANCELLED") or payload.get("type") == "tool_confirmation_required":
+            self.finished.set()
 
     async def receive_text(self):
         if self.received:
+            await asyncio.wait_for(self.finished.wait(), 5)
             raise Disconnected()
         self.received = True
         return json.dumps({"text": "test request", "voice_enabled": False})

@@ -1,7 +1,22 @@
 // Small client for the local Sentinel backend.
 // The port and the per-boot session token come from the Electron preload bridge.
 // The token always travels in a header, never in a URL (URLs end up in logs).
-type Bridge = { auth?: { getSessionToken(): Promise<string>; getBackendPort(): Promise<number> } };
+type Bridge = {
+  auth?: { getSessionToken(): Promise<string>; getBackendPort(): Promise<number> };
+  backend?: { onFatalError(callback: () => void): () => void; onLocked?(callback: () => void): () => void };
+};
+
+// Electron reports Windows lock / sleep locking Sentinel. Returns an unsubscribe.
+export function onOsLocked(callback: () => void): () => void {
+  const bridge = (window as unknown as { sentinel?: Bridge }).sentinel;
+  return bridge?.backend?.onLocked ? bridge.backend.onLocked(callback) : () => {};
+}
+
+// Electron reports when the backend could not be restarted (Safe Mode). Returns an unsubscribe.
+export function onBackendFatal(callback: () => void): () => void {
+  const bridge = (window as unknown as { sentinel?: Bridge }).sentinel;
+  return bridge?.backend ? bridge.backend.onFatalError(callback) : () => {};
+}
 
 export async function backendInfo(): Promise<{ port: number; token: string }> {
   const bridge = (window as unknown as { sentinel?: Bridge }).sentinel;
@@ -65,6 +80,22 @@ export type GpuSnapshot = {
 export type GovernorStatus = {
   state: string; cpu_percent: number; ram_percent: number;
   ram_used_gb?: number; ram_total_gb?: number; manual_override: boolean; gpu?: GpuSnapshot;
+  sentinel_vram_mb?: number;   // VRAM held by Sentinel's own GPU model (0 when none)
+};
+export type ModelProfile = {
+  id: string; name: string; description?: string; tier?: string; filename?: string;
+  downloaded?: boolean | null;   // null for "auto" (it has no file of its own)
+};
+export type GpuEngineStatus = {
+  available: boolean; reason: string | null; running: boolean; model: string | null;
+  vram_mb: number; last_error: string | null;
+};
+export type ModelsInfo = {
+  active_profile: string;
+  profiles: ModelProfile[];
+  loaded: { profile_id: string | null; name: string | null; engine: 'gpu' | 'cpu' | null; notes: string[] } | null;
+  last_load_error: string | null;
+  gpu_engine?: GpuEngineStatus;
 };
 export type EgressEvent = {
   ts: string; tool: string | null; method: string; host: string;

@@ -222,10 +222,18 @@ class ErrorHandler {
    * Enter safe mode — disable non-essential features.
    */
   _enterSafeMode() {
+    this.enterSafeMode(new Error('Too many errors detected'));
+  }
+
+  /**
+   * Public entry point, e.g. when the backend keeps crashing.
+   */
+  enterSafeMode(reason) {
     if (this.safeMode) return;
 
     this.safeMode = true;
-    logger.warn('system', '⚠️ SAFE MODE ACTIVATED — Too many errors detected', {
+    logger.warn('system', '⚠️ SAFE MODE ACTIVATED', {
+      reason: reason && reason.message ? reason.message : String(reason || 'unknown'),
       errorCounts: { ...this.errorCounts },
       recentErrors: this.errorTimestamps.length
     });

@@ -51,3 +51,41 @@ class ResearchEntry(Base):
     url = Column(Text)
     title = Column(Text)
     timestamp = Column(Float, index=True)
+
+
+class WatchBaseline(Base):
+    """System Watch: what the owner accepted as normal on this PC (one row per item)."""
+    __tablename__ = "watch_baseline"
+    id = Column(String, primary_key=True)          # "<category>:<key>"
+    category = Column(String, index=True, nullable=False)
+    key = Column(Text, nullable=False)
+    detail = Column(Text, default="")
+    accepted_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WatchAlert(Base):
+    """System Watch: something that looked off, with the steps shown to the owner."""
+    __tablename__ = "watch_alerts"
+    id = Column(String, primary_key=True)          # "<category>:<key>" so a repeat updates, not duplicates
+    category = Column(String, index=True, nullable=False)
+    key = Column(Text, nullable=False)
+    severity = Column(String, default="warning")   # info | warning | critical
+    title = Column(Text, nullable=False)
+    detail = Column(Text, default="")
+    steps = Column(Text, default="[]")             # JSON list of plain-language steps
+    status = Column(String, index=True, default="open")   # open | accepted | resolved
+    first_seen = Column(DateTime, default=datetime.utcnow)
+    last_seen = Column(DateTime, default=datetime.utcnow)
+
+
+class WorkItem(Base):
+    """Owner-created tasks, drafts and plans, inside the encrypted database."""
+    __tablename__ = "work_items"
+    id = Column(String, primary_key=True)
+    kind = Column(String, index=True, nullable=False)
+    title = Column(String, nullable=False)
+    content = Column(Text, default="")
+    status = Column(String, default="open")
+    due_at = Column(String, nullable=True)
+    payload = Column(Text, default="{}")
+    created_at = Column(DateTime, default=datetime.utcnow)

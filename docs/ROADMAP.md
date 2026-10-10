@@ -1,5 +1,5 @@
 # SENTINEL: Assessment & Roadmap
-_Living plan. Last updated 2026-09-27: **Phase 1 (security foundation) complete** on `phase1/security` → `main`; the owner still has to set the PIN (tracker O2). Next: Phase 1b (GPU sidecar). Status per task: `docs/TRACKER.md`; plain-language change notes: `CHANGELOG.md`._
+_Living plan. Last updated 2026-10-10: **audit findings F01–F23 addressed (T-05)** on `phase1/security`, uncommitted. 420 backend tests, 13 memory checks, 17 JavaScript checks, real GPU chat smoke, Electron start and the frontend build pass. Still open: speech model vocabulary file (download needed), vision model files, portable runtime build + clean-machine install (owner steps). Authoritative feature list: `docs/CAPABILITIES.md`. Details: `docs/tasks/T-05-audit-findings.md`._
 
 ## 1. Where things stand
 
@@ -11,18 +11,19 @@ _Living plan. Last updated 2026-09-27: **Phase 1 (security foundation) complete*
 |---|---|---|
 | Desktop shell | ✅ Electron + React/Vite, production build loads | `src/main`, `frontend/` |
 | Backend | ✅ FastAPI + WebSocket streaming, cancel, one-request guard, confirmations | `backend/app/main.py` |
-| Local LLM | 🟡 Works, **CPU only** (python binding has no GPU offload) → D1, Phase 1b | `ai_service.py` |
+| Local LLM | ✅ Local GPU sidecar, automatic model selection and CPU fallback; real 7B GPU chat verified 2026-10-03 | `ai_service.py`, `llama_sidecar.py` |
 | System awareness | ✅ Profiler + resource governor; GPU via NVML, off the event loop | `resource_governor.py`, `gpu_monitor.py` |
 | Security core | ✅ Policy tiers, single-use confirmation tokens, audit log, sandboxed runner, session token | `policy_engine.py`, `secure_runner.py` |
-| Skills | ✅ 7 skills, manifest-based loader / router / verifier | `backend/skills/`, `skill_*.py` |
-| Vision | ✅ Secure image ingest + local inference | `vision_*.py` |
+| Skills | ✅ 7 skills; pinned SHA-256 integrity checked at registration and load (release policy); owner on/off switches enforced for every alias; Python runs in a contained child process; Blender unavailable (no containment) | `backend/skills/`, `skill_*.py`, `python_sandbox.py` |
+| Vision | 🟡 Owner-attached images are validated, kept in memory only and analyzed in chat; needs local LLaVA model files (not installed) | `vision_*.py` |
 | Memory | ✅ SQLCipher-encrypted, closed while locked; retention + real deletion | `db/database.py`, `retention.py` |
-| Voice | 🟡 TTS only (pyttsx3) | `voice_service.py` |
+| Workspace | ✅ Tasks, plans, drafts, memory, history, privacy, skills and emergency stop: API registered and screens connected; plans recover from interruption for owner review | `workspace_routes.py`, `frontend/src/components/Workspace/` |
+| Voice | 🟡 TTS (stops on lock / Voice off) + dictation UI; status shows unavailable until the model really loads — current model folder lacks its vocabulary file; see `docs/VOICE.md` | `voice_service.py`, `speech_input.py` |
 | Auth / vault | ✅ PIN (Argon2id) + DPAPI + recovery key, auto-lock, fresh PIN for Tier 3+, secrets vault | `vault.py`, `secrets_store.py` |
 | Privacy dashboard | ❌ | Phase 6 |
 | Installer | ❌ Python not bundled | Phase 7 |
 | Internet | ✅ Egress guard: allowlist / network-tool rule / offline mode, every call logged; tests can't go online | `egress.py` |
-| Tests | ✅ 287 pass on Windows + chat smoke + Electron start | `backend/tests/`, `tools/` |
+| Tests | ✅ 420 backend + 17 JavaScript + 13 memory checks + frontend build (2026-10-10); real GPU chat smoke and Electron start pass; installer not rebuilt | `backend/tests/`, `tools/` |
 
 ## 2. Phase 0 results (done 2026-09-27)
 Verified on Windows with `tools\check.bat`.
@@ -84,6 +85,18 @@ Email/calendar behind explicit permission, drafts only until approved · dashboa
 
 ### Phase 7: Hardening & packaging
 Installer that bundles Python · hash-pinned model/binary verification · remove unused npm deps (`@huggingface/transformers`, `chokidar`, `electron-store`, `marked`: ~250 MB) · tamper-evident (hash-chained) audit log · encrypted backup/restore · threat model · performance tuning.
+
+### Phase 8: System Watch ✅ first version 2026-10-10 (owner request; idea PDF pp46–57, defensive only) — card `T-06`
+Sentinel notices when the PC looks wrong and says so, without claiming to be unhackable. Baseline of normal (startup items, scheduled tasks, services, admin accounts, firewall, Defender) · periodic local checks with Windows' own tools · alerts in plain language with numbered steps · only reversible automatic reactions (Offline mode, lock Sentinel, ask to run a Defender quick scan) · never deletes, kills or changes security settings by itself · "this is fine" acknowledgements · Sentinel self-integrity (skills, GPU engine, audit chain) · daily health line. Works alongside Windows Defender, not instead of it; nothing leaves the PC.
+
+### Phase 9: Portfolio Advisor (owner request 2026-10-10; idea PDF pp21–23, 36–37) — card `T-07`
+Advisor, not trader: Sentinel analyses and recommends; the owner moves money. No bank or broker credentials, ever (resolves the pp23–25 vs pp37–38 conflict). Investor profile (goals, horizon, risk, monthly amount) · holdings import from broker/CAMS exports or manual entry · read-only market data (AMFI NAVs, NSE/BSE prices) through the egress guard · deterministic calculator for returns, allocation, risk, SIP projections, expense ratio and overlap (the model explains, code calculates) · suggestions with reasons, ranges and risks, never guaranteed returns · step-by-step "how to do it yourself" · tracking of what the owner actually did. Educational analysis, not licensed advice.
+
+### Phase 10: Professional skill packs (idea PDF pp5–7, 30)
+One profession at a time, each a pack of knowledge + tools + checks + tests: finance (Phase 9) → coding → research/writing → marketing/business → technical. Where a local model cannot be reliable (medical, legal judgement), Sentinel says so and points to a professional instead of guessing.
+
+### Idea backlog (from the 2026-10-10 review; not scheduled)
+Daily briefing (reminders + portfolio + PC health) · encrypted backup/restore to one recovery-key-protected file · file actions with preview and 5-minute undo (resolves PDF p44) · readable "why did Sentinel do this" view over the audit log · per-skill rate limits. Not planned as written: absolute "unhackable / zero impact / guaranteed truth" claims, autonomous trading, an unstoppable watchdog, cloud AI fallback, a Rust/Tauri rewrite. Separate future projects: creative studio, health tracking, multi-user, phone sync.
 
 ## 5. How we work (token-efficient)
 - **Claude:** design, security-critical code, reviews. Edits the repo directly through the linked folder (plain text, the cheapest path). Doesn't drive other AIs by screen control (a screenshot costs ~1.5k tokens).

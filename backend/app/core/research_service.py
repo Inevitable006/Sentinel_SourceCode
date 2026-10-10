@@ -5,6 +5,7 @@ import re
 import urllib.parse
 from app.core.request_context import request_context
 from app.core.network_utils import SafeAsyncClient
+from app.core.tool_registry import failed
 
 class ResearchService:
     """Web search + page fetch. History is kept in the encrypted database (table research_history),
@@ -57,7 +58,7 @@ class ResearchService:
                 response = await client.safe_request("GET", url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=5.0)
             
             if response.status_code != 200:
-                return f"Search failed with status: {response.status_code}"
+                return failed(f"Search failed with status: {response.status_code}")
                 
             html = response.text
             
@@ -98,7 +99,7 @@ class ResearchService:
                 print(f"[Research] history not saved ({type(e).__name__})")
             return output
         except Exception as e:
-            return f"Web search failed: {e}"
+            return failed(f"Web search failed: {e}")
 
     def search(self, query: str, request_id: str = None) -> str:
         """
@@ -107,10 +108,13 @@ class ResearchService:
         for genuine cancellation.
         """
         if self.local_mode:
-            return "System Error: Local Only mode is enabled. Web research is disabled."
+            return failed("System Error: Local Only mode is enabled. Web research is disabled.")
 
         # We must run the async search within a new event loop or the current one
         # since this is called from a synchronous thread executor.
+        if not request_id:
+            from app.core.safe_process import current_job
+            request_id = current_job.get()   # the request SecureRunner is running this for
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
@@ -123,9 +127,9 @@ class ResearchService:
             result = loop.run_until_complete(task)
             return result
         except asyncio.CancelledError:
-            return "Error: Web research task was cancelled by the user."
+            return failed("Error: Web research task was cancelled by the user.")
         except Exception as e:
-            return f"Web search failed: {e}"
+            return failed(f"Web search failed: {e}")
         finally:
             if request_id:
                 request_context.unregister_task(request_id)
@@ -140,7 +144,7 @@ class ResearchService:
                 response = await client.safe_request("GET", url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=5.0)
             
             if response.status_code != 200:
-                return f"Fetch failed with status: {response.status_code}"
+                return failed(f"Fetch failed with status: {response.status_code}")
                 
             html = response.text
             
@@ -157,15 +161,18 @@ class ResearchService:
                 
             return text
         except Exception as e:
-            return f"Fetch failed: {e}"
+            return failed(f"Fetch failed: {e}")
 
     def fetch_url(self, url: str, request_id: str = None) -> str:
         """
         Executes a safe URL fetch.
         """
         if self.local_mode:
-            return "System Error: Local Only mode is enabled. Web research is disabled."
+            return failed("System Error: Local Only mode is enabled. Web research is disabled.")
 
+        if not request_id:
+            from app.core.safe_process import current_job
+            request_id = current_job.get()   # the request SecureRunner is running this for
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
@@ -178,9 +185,9 @@ class ResearchService:
             result = loop.run_until_complete(task)
             return result
         except asyncio.CancelledError:
-            return "Error: Web research task was cancelled by the user."
+            return failed("Error: Web research task was cancelled by the user.")
         except Exception as e:
-            return f"Fetch failed: {e}"
+            return failed(f"Fetch failed: {e}")
         finally:
             if request_id:
                 request_context.unregister_task(request_id)

@@ -40,6 +40,13 @@ def unregister(value: str) -> None:
         _values.discard(value)
 
 
+def clear_registered(_reason: str = "") -> None:
+    """At lock: drop the plaintext secret values kept for masking (they are re-registered from
+    the encrypted vault at the next unlock). Pattern-based masking keeps working."""
+    with _lock:
+        _values.clear()
+
+
 def redact(text: str) -> str:
     if not isinstance(text, str) or not text:
         return text

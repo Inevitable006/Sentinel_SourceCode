@@ -54,9 +54,9 @@ Desktop.ini
 *.tmp
 *.temp
 backend/llama-bin.zip
-backend/llama-bin/*.dll
-backend/llama-bin/*.exe
+backend/llama-bin/
 backend/models/*.gguf
+backend/models/faster-whisper-base/
 electron.err
 
 # Local verification output (machine-specific)

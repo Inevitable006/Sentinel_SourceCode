@@ -135,16 +135,46 @@ async function bootSentinel() {
   global.SENTINEL_BACKEND_PORT = process.env.SENTINEL_BACKEND_PORT || 8000;
   process.env.SENTINEL_BACKEND_PORT = global.SENTINEL_BACKEND_PORT;
 
-  // Point to the virtual environment python executable
+  // Python runtime: the installed app uses its own portable runtime (resources/python, built by
+  // tools/build_runtime.ps1); a development checkout uses backend/.venv. Never a machine-specific path.
+  const fs = require('fs');
   const backendRoot = app.isPackaged ? path.join(process.resourcesPath, 'backend') : path.join(__dirname, '../../backend');
-  const pythonCmd = path.join(backendRoot, '.venv/Scripts/python.exe');
+  const pythonCmd = app.isPackaged
+    ? path.join(process.resourcesPath, 'python', 'python.exe')
+    : path.join(backendRoot, '.venv', 'Scripts', 'python.exe');
   const serverScript = path.join(backendRoot, 'run_server.py');
+  if (!fs.existsSync(pythonCmd)) {
+    logger.error('system', 'Python runtime not found', { expected: app.isPackaged ? 'resources/python/python.exe' : 'backend/.venv' });
+  }
 
   let aiProcess = null;
   let retryCount = 0;
   const MAX_RETRIES = 3;
 
+  // One failure handler for both "exited with an error" and "could not be spawned at all".
+  function handleBackendFailure(reason) {
+    if (isQuitting) return;
+    retryCount++;
+    if (retryCount <= MAX_RETRIES) {
+      const backoffMs = retryCount * 2000;
+      logger.info('system', `Restarting Python backend in ${backoffMs}ms (${reason})...`);
+      setTimeout(spawnBackend, backoffMs);
+    } else {
+      logger.error('system', 'Python backend exceeded max retries. Entering Safe Mode.', { reason });
+      errorHandler.enterSafeMode(new Error(`Backend could not be restarted: ${reason}`));
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('backend-fatal-error');
+      }
+    }
+  }
+
   function spawnBackend() {
+    let failureHandled = false;
+    const failOnce = (reason) => {
+      if (failureHandled) return;
+      failureHandled = true;
+      handleBackendFailure(reason);
+    };
     try {
       logger.info('system', `Spawning Python backend (Attempt ${retryCount + 1}/${MAX_RETRIES + 1})...`);
 
@@ -156,12 +186,13 @@ async function bootSentinel() {
       };
 
       aiProcess = spawn(pythonCmd, [serverScript], {
-        cwd: path.join(__dirname, '../../'),
+        cwd: app.isPackaged ? backendRoot : path.join(__dirname, '../../'),
         stdio: 'pipe',
         env: backendEnv
       });
       aiProcess.on('error', (err) => {
-        logger.error('system', 'Backend spawn error (expected in packaged UI test)', { error: err.message });
+        logger.error('system', 'Backend spawn error', { error: err.message });
+        failOnce(`spawn error: ${err.code || err.message}`);
       });
 
       aiProcess.stdout.on('data', (data) => console.log(`[Python AI] ${data}`));
@@ -169,27 +200,35 @@ async function bootSentinel() {
 
       aiProcess.on('exit', (code) => {
         logger.warn('system', `Python backend exited with code ${code}`);
-        if (code !== 0 && !isQuitting) {
-          retryCount++;
-          if (retryCount <= MAX_RETRIES) {
-            const backoffMs = retryCount * 2000;
-            logger.info('system', `Restarting Python backend in ${backoffMs}ms...`);
-            setTimeout(spawnBackend, backoffMs);
-          } else {
-            logger.error('system', 'Python backend exceeded max retries. Entering Safe Mode.');
-            errorHandler.enterSafeMode(new Error('Backend crashed repeatedly'));
-            if (mainWindow) {
-              mainWindow.webContents.send('backend-fatal-error');
-            }
-          }
-        }
+        if (code !== 0) failOnce(`exit code ${code}`);
       });
     } catch (err) {
       logger.error('system', 'Failed to spawn Python backend', { error: err.message });
+      failOnce(`spawn threw: ${err.message}`);
     }
   }
 
   spawnBackend();
+
+  // Locking Windows, sleeping or hibernating locks Sentinel too (encrypted database closed).
+  // After resume the owner must unlock again; the UI gate shows the unlock screen.
+  const { powerMonitor } = require('electron');
+  const lockSentinel = (reason) => {
+    const http = require('http');
+    const req = http.request({
+      host: '127.0.0.1', port: Number(global.SENTINEL_BACKEND_PORT), path: '/api/lock', method: 'POST',
+      headers: { 'X-Sentinel-Session': global.SENTINEL_SESSION_TOKEN, 'Content-Length': 0 }, timeout: 3000
+    }, (res) => {
+      res.resume();
+      logger.info('system', `Sentinel locked (${reason}): HTTP ${res.statusCode}`);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sentinel-locked');
+    });
+    req.on('error', (err) => logger.warn('system', `Could not lock Sentinel on ${reason}`, { error: err.message }));
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.end();
+  };
+  powerMonitor.on('lock-screen', () => lockSentinel('Windows lock'));
+  powerMonitor.on('suspend', () => lockSentinel('sleep'));
 
   app.on('before-quit', () => {
     if (aiProcess) aiProcess.kill();
@@ -251,6 +290,8 @@ function createWindow() {
   // Security: the window may only ever show the Sentinel UI. A link in model
   // output must not load a web page that could reach the preload bridge.
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // Microphone only, from our main UI; camera, embedded frames and other permissions stay denied.
+  require('./core/media-permissions').installMicrophonePermissions(mainWindow.webContents, isAppUrl);
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!isAppUrl(url)) {
       event.preventDefault();

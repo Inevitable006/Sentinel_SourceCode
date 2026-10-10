@@ -58,6 +58,31 @@ def _percent(used: Optional[float], total: Optional[float]) -> Optional[float]:
     return round(used / total * 100.0, 1)
 
 
+def vram_pressure_percent(used_mb, total_mb, own_mb: float = 0.0) -> float:
+    """How full the GPU is for everyone else: VRAM used by other programs as a share of the
+    VRAM that Sentinel's own model does not hold. Without a Sentinel model it is plain
+    "used / total". With the 7B model loaded (about 5.5 of 8 GB), other programs reach 85 %
+    when they use about 2.3 of the remaining 2.7 GB, so the governor frees the model exactly
+    when the owner's own work starts running out of VRAM, and not merely because Sentinel's
+    model itself is big."""
+    if used_mb is None or not total_mb:
+        return 0.0
+    total = float(total_mb)
+    own = max(0.0, min(float(own_mb or 0.0), total - 1.0))
+    others = max(0.0, float(used_mb) - own)
+    return round(min(100.0, others / (total - own) * 100.0), 1)
+
+
+def effective_vram_percent(snap: Dict[str, Any], own_mb: float = 0.0) -> float:
+    """The VRAM figure the resource governor acts on (0.0 when there is no GPU reading)."""
+    if not snap.get("available"):
+        return 0.0
+    used, total = snap.get("vram_used_mb"), snap.get("vram_total_mb")
+    if used is None or not total:
+        return float(snap.get("vram_percent") or 0.0)
+    return vram_pressure_percent(used, total, own_mb)
+
+
 class GpuMonitor:
     def __init__(self):
         self._lock = threading.Lock()
@@ -70,10 +95,12 @@ class GpuMonitor:
         self._warned = set()
 
     # ── public API ──────────────────────────────────────────────
-    def snapshot(self) -> Dict[str, Any]:
-        """Fresh-enough reading (cached for CACHE_TTL). Blocking at most ~2 s on the nvidia-smi fallback."""
+    def snapshot(self, fresh: bool = False) -> Dict[str, Any]:
+        """Fresh-enough reading (cached for CACHE_TTL). Blocking at most ~2 s on the nvidia-smi fallback.
+        fresh=True skips the cache (used to measure VRAM right before/after loading a model);
+        a failing source is still only retried after RETRY_AFTER."""
         with self._lock:
-            if self._cache is not None and _now() - self._cache_at < CACHE_TTL:
+            if not fresh and self._cache is not None and _now() - self._cache_at < CACHE_TTL:
                 return dict(self._cache)
             try:
                 snap = self._read_nvml() or self._read_smi() or _empty()

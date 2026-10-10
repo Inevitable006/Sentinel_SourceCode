@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import './SettingsPanel.css';
-import { apiGet, apiPost, ApiError, timeAgo, type EgressEvent, type EgressStatus, type UnlockStatus } from '../../lib/backend';
+import { apiGet, apiPost, ApiError, timeAgo, type EgressEvent, type EgressStatus, type ModelsInfo, type UnlockStatus } from '../../lib/backend';
 
 interface ModelProfile {
   id: string;
   name: string;
-  description: string;
+  description?: string;
+  downloaded?: boolean | null;
 }
 
 const SettingsPanel: React.FC = () => {
   const [systemPrompt, setSystemPrompt] = useState('Loading...');
   const [models, setModels] = useState<ModelProfile[]>([]);
   const [activeModel, setActiveModel] = useState<string>('');
+  const [modelInfo, setModelInfo] = useState<ModelsInfo | null>(null);
   const [localOnly, setLocalOnly] = useState(false);
   const [offline, setOffline] = useState(false);
   const [netEvents, setNetEvents] = useState<EgressEvent[]>([]);
@@ -59,8 +61,9 @@ const SettingsPanel: React.FC = () => {
         const modelsRes = await fetch(`http://127.0.0.1:${port}/api/models`, { headers });
         if (modelsRes.ok) {
           const mData = await modelsRes.json();
-          setModels(mData.profiles);
-          setActiveModel(mData.active_profile);
+          setModels(Array.isArray(mData.profiles) ? mData.profiles : []);
+          setActiveModel(String(mData.active_profile ?? ''));
+          setModelInfo(mData);
         }
       } catch (err) {
         console.error(err);
@@ -251,7 +254,8 @@ const SettingsPanel: React.FC = () => {
         },
         body: JSON.stringify({ profile_id: newModel })
       });
-      setStatus('Model profile updated.');
+      setStatus('Model profile updated. Load the model again in the chat to use it.');
+      try { setModelInfo(await apiGet<ModelsInfo>('/api/models')); } catch { /* shown on next open */ }
       setTimeout(() => setStatus(''), 3000);
     } catch (e) {
       console.error(e);
@@ -305,9 +309,27 @@ const SettingsPanel: React.FC = () => {
         <p className="settings-desc">Choose the AI model profile to use for processing.</p>
         <select value={activeModel} onChange={handleModelChange} className="settings-dropdown">
           {models.map(m => (
-            <option key={m.id} value={m.id}>{m.name} ({m.description})</option>
+            <option key={m.id} value={m.id}>
+              {m.name}{m.downloaded === false ? ' (not downloaded)' : ''}{m.description ? ` (${m.description})` : ''}
+            </option>
           ))}
         </select>
+        {modelInfo && (
+          <p className="settings-desc">
+            {modelInfo.loaded
+              ? `Loaded now: ${modelInfo.loaded.name ?? modelInfo.loaded.profile_id} on the ${String(modelInfo.loaded.engine ?? '').toUpperCase()}.`
+              : 'No model loaded right now.'}
+            {' '}GPU engine: {modelInfo.gpu_engine?.available
+              ? (modelInfo.gpu_engine.running ? `running (${((modelInfo.gpu_engine.vram_mb ?? 0) / 1024).toFixed(1)} GB of VRAM)` : 'ready')
+              : `not available (${modelInfo.gpu_engine?.reason ?? 'unknown'})`}.
+          </p>
+        )}
+        {(modelInfo?.loaded?.notes?.length ?? 0) > 0 && (
+          <p className="settings-desc">Skipped: {modelInfo!.loaded!.notes.join(' · ')}</p>
+        )}
+        {!modelInfo?.loaded && modelInfo?.last_load_error && (
+          <p className="settings-desc">Last load problem: {modelInfo.last_load_error}</p>
+        )}
       </div>
 
       <div className="settings-section">

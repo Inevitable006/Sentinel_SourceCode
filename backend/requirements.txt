@@ -13,9 +13,13 @@ Pillow==12.3.0
 pyttsx3==2.90
 
 # Local inference.
-# NOTE: this build is CPU-only on Python 3.14 (llama_supports_gpu_offload() == False),
-# so the RTX 3050 is not used. See docs/ROADMAP.md -> "GPU inference decision".
+# CPU engine: this binding build is CPU-only on Python 3.14 (llama_supports_gpu_offload() == False).
 llama-cpp-python==0.2.60
+# GPU engine (app/core/llama_sidecar.py): llama.cpp's CUDA build in backend/llama-bin.zip
+# (hash-pinned in backend/llama-bin.sha256.json) loads the CUDA 12 runtime from these packages.
+nvidia-cuda-runtime-cu12==12.9.79
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cuda-nvrtc-cu12==12.9.86
 nvidia-ml-py==13.615.71     # GPU stats via NVML (no nvidia-smi process per poll)
 cryptography==50.0.1        # AES-GCM + Argon2id for the owner unlock (no network use)
 sqlcipher3-wheels==0.5.7    # SQLCipher: encrypted SQLite database (import name: sqlcipher3)

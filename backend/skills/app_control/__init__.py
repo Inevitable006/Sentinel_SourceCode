@@ -10,6 +10,7 @@ import shutil
 from typing import Optional
 from app.core.paths import SENTINEL_DATA_DIR
 from app.core.safe_process import safe_process
+from app.core.tool_registry import failed
 
 def _find_blender_executable() -> Optional[str]:
     """Attempts to find the Blender executable path on the system."""
@@ -41,7 +42,7 @@ def run_blender_script(script_code: str, blend_file_path: Optional[str] = None, 
     """
     blender_exe = _find_blender_executable()
     if not blender_exe:
-        return "Execution Failed: Could not locate the 'blender' executable on the system."
+        return failed("Execution Failed: Could not locate the 'blender' executable on the system.")
 
     # Create the scratch directory if it doesn't exist
     scratch_dir = SENTINEL_DATA_DIR / "scratch"
@@ -66,7 +67,7 @@ def run_blender_script(script_code: str, blend_file_path: Optional[str] = None, 
             
         cmd.extend(["--background", "--python", str(temp_filename)])
         
-        success, stdout, stderr = safe_process.run_command(cmd, job_id=session_id)
+        success, stdout, stderr = safe_process.run_command(cmd)
         
         if success:
             output = stdout.strip()
@@ -74,10 +75,10 @@ def run_blender_script(script_code: str, blend_file_path: Optional[str] = None, 
             # or just return the full output.
             return f"Blender executed successfully.\nOutput:\n{output}" if output else "Blender executed successfully with no output."
         else:
-            return f"Blender Execution Failed:\n{stderr}\n{stdout}"
+            return failed(f"Blender Execution Failed:\n{stderr}\n{stdout}")
             
     except Exception as e:
-        return f"System Error executing Blender script: {str(e)}"
+        return failed(f"System Error executing Blender script: {str(e)}")
         
     finally:
         # Ensure the temporary file is securely deleted

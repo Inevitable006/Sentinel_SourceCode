@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Paperclip, Bot, User, Volume2, VolumeX } from 'lucide-react';
 import './Chat.css';
-import { notifyLockStateChanged } from '../../lib/backend';
+import Dictation from './Dictation';
+import { apiGet, notifyLockStateChanged } from '../../lib/backend';
 
 interface Message {
   id: string;
@@ -16,7 +17,15 @@ interface Confirmation {
   action_preview: { tool: string; purpose: string; risk: string; args: Record<string, unknown> };
 }
 
-const ChatArea: React.FC = () => {
+// Shows ``` fenced blocks as code; everything else stays plain text (React escapes it, no HTML is injected).
+const MessageText: React.FC<{ text: string }> = ({ text }) => {
+  const parts = text.split(/```[^\n`]*\n?/);
+  return <>{parts.map((part, i) => i % 2 === 1
+    ? <pre key={i} className="message-code"><code>{part.replace(/\n$/, '')}</code></pre>
+    : <span key={i}>{part}</span>)}</>;
+};
+
+const ChatArea: React.FC<{ resumeRequest?: { threadId: string; nonce: number } | null }> = ({ resumeRequest }) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -26,6 +35,7 @@ const ChatArea: React.FC = () => {
     }
   ]);
   const [input, setInput] = useState('');
+  const [dictating, setDictating] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [modelLoadState, setModelLoadState] = useState<'unloaded'|'loading'|'loaded'|'failed'>('unloaded');
@@ -38,6 +48,7 @@ const ChatArea: React.FC = () => {
   const [pinNeeded, setPinNeeded] = useState(false);
   const [approvalPin, setApprovalPin] = useState('');
   const streamIdRef = useRef<string | null>(null);
+  const threadRef = useRef<string | null>(null);   // conversation to stay in across reconnects
   const authRef = useRef({ port: 8000, token: '' });
   const wsRef = useRef<WebSocket | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -77,6 +88,26 @@ const ChatArea: React.FC = () => {
       setModelLoadState('failed');
     }
   };
+
+  // The backend is the authority on whether a model is loaded (it can unload under pressure,
+  // on model change or lock). Poll it so the badge never claims "Model Ready" when it is not.
+  useEffect(() => {
+    let stopped = false;
+    const sync = async () => {
+      try {
+        const info = await apiGet<{ loaded: unknown; last_load_error?: string | null }>('/api/models');
+        if (stopped) return;
+        setModelLoadState(prev => {
+          if (prev === 'loading') return prev;
+          if (info.loaded) return 'loaded';
+          return prev === 'failed' ? 'failed' : 'unloaded';
+        });
+      } catch { /* backend unreachable: UnlockGate hides this view */ }
+    };
+    sync();
+    const id = window.setInterval(sync, 5000);
+    return () => { stopped = true; window.clearInterval(id); };
+  }, []);
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -148,6 +179,19 @@ const ChatArea: React.FC = () => {
             setPinNeeded(false);
             setApprovalPin('');
             setBusy(false);
+          } else if (data.type === 'thread' && typeof data.thread_id === 'string') {
+            // A reconnect starts a new thread on the backend; rejoin the one this window was using.
+            if (threadRef.current && threadRef.current !== data.thread_id) {
+              ws?.send(JSON.stringify({ type: 'resume', thread_id: threadRef.current }));
+            } else {
+              threadRef.current = data.thread_id;
+            }
+          } else if (data.type === 'resumed' && Array.isArray(data.messages)) {
+            threadRef.current = String(data.thread_id);
+            setMessages(data.messages.map((m: { role: string; content: string }, i: number) => ({
+              id: `resumed-${i}-${Date.now()}`, sender: m.role === 'user' ? 'user' : 'sentinel',
+              text: String(m.content), timestamp: new Date() })));
+            setStatus('Continuing an earlier conversation.');
           } else if (data.type === 'locked') {
             setStatus('Sentinel locked.');
             notifyLockStateChanged();
@@ -179,14 +223,34 @@ const ChatArea: React.FC = () => {
     };
   }, []);
 
+  // "Continue in Console" from the history view.
+  useEffect(() => {
+    if (!resumeRequest) return;
+    threadRef.current = resumeRequest.threadId;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'resume', thread_id: resumeRequest.threadId }));
+    }
+  }, [resumeRequest]);
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = (e: React.FormEvent) => {
+  // Uploads the image the owner picked; the backend keeps it in memory and returns an id.
+  const uploadImage = async (file: File): Promise<string> => {
+    const { port, token } = authRef.current;
+    const response = await fetch(`http://127.0.0.1:${port}/api/vision/upload`, {
+      method: 'POST', headers: { 'X-Sentinel-Session': token, 'Content-Type': file.type || 'application/octet-stream' }, body: file
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(String(result.detail || 'The image could not be attached.'));
+    return String(result.image_id);
+  };
+
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || busy || confirmation || confirming || !isConnected) return;
+    if (!input.trim() || busy || dictating || confirmation || confirming || !isConnected) return;
 
     // Add user message to UI
     const newUserMsg: Message = {
@@ -205,10 +269,16 @@ const ChatArea: React.FC = () => {
       };
 
       if (selectedImage) {
-        // We rely on Electron IPC to send absolute paths.
-        // In this architecture, File.path gives the absolute path.
-        // @ts-ignore
-        payload.image_path = selectedImage.path || "";
+        try {
+          payload.image_id = await uploadImage(selectedImage);
+        } catch (err) {
+          setStatus(err instanceof Error ? err.message : 'The image could not be attached.');
+          return;
+        }
+      }
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        setStatus('Connection to backend lost.');
+        return;
       }
 
       wsRef.current.send(JSON.stringify(payload));
@@ -294,10 +364,17 @@ const ChatArea: React.FC = () => {
             <span className="badge badge-green" style={{marginLeft: '0.5rem'}}>Model Ready</span>
           )}
           {modelLoadState === 'failed' && (
-            <span className="badge badge-red" title={loadErrorMsg} style={{marginLeft: '0.5rem'}}>Load Failed</span>
+            <>
+              <span className="badge badge-red" title={loadErrorMsg} style={{marginLeft: '0.5rem'}}>Load Failed</span>
+              <button className="badge badge-blue" onClick={handleLoadModel} title={loadErrorMsg} style={{cursor: 'pointer', border: '1px solid currentColor', background: 'transparent', marginLeft: '0.5rem'}}>Retry</button>
+            </>
           )}
         </div>
-        <div className="voice-toggle" onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', color: voiceEnabled ? 'var(--accent-primary)' : 'var(--text-secondary)' }}>
+        <div className="voice-toggle" onClick={() => {
+          // Turning Voice off also silences anything already queued.
+          if (voiceEnabled && wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: 'voice_off' }));
+          setVoiceEnabled(!voiceEnabled);
+        }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', color: voiceEnabled ? 'var(--accent-primary)' : 'var(--text-secondary)' }}>
           {voiceEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
           <span style={{ fontSize: '0.85rem' }}>{voiceEnabled ? 'Voice On' : 'Voice Off'}</span>
         </div>
@@ -310,7 +387,7 @@ const ChatArea: React.FC = () => {
               {msg.sender === 'sentinel' ? <Bot size={20} /> : <User size={20} />}
             </div>
             <div className="message-content">
-              <div className="message-bubble">{msg.text}</div>
+              <div className="message-bubble"><MessageText text={msg.text} /></div>
               <div className="message-time">
                 {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </div>
@@ -322,6 +399,7 @@ const ChatArea: React.FC = () => {
 
       <div className="input-area">
         <div role="status" aria-live="polite">{status}</div>
+        {busy && <button type="button" onClick={() => wsRef.current?.send(JSON.stringify({ type: 'cancel' }))}>Stop current request</button>}
         {confirmation && (
           <div role="group" aria-label="Action approval">
             <p>{confirmation.action_preview.purpose}</p>
@@ -335,7 +413,7 @@ const ChatArea: React.FC = () => {
               </label>
             )}
             <button type="button" onClick={handleConfirm} disabled={confirming || !isConnected || (pinNeeded && !approvalPin)}>Approve action</button>
-            <button type="button" onClick={() => { setConfirmation(null); setPinNeeded(false); setApprovalPin(''); setStatus('Action declined.'); }}>Decline</button>
+            <button type="button" onClick={() => { wsRef.current?.send(JSON.stringify({ type: 'decline' })); setConfirmation(null); setPinNeeded(false); setApprovalPin(''); setStatus('Action declined.'); }}>Decline</button>
           </div>
         )}
         {selectedImage && (
@@ -344,10 +422,13 @@ const ChatArea: React.FC = () => {
             <button type="button" onClick={() => setSelectedImage(null)} style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.8rem' }}>Remove</button>
           </div>
         )}
+        <Dictation disabled={!isConnected || busy || !!confirmation || confirming}
+          onActive={setDictating}
+          onTranscript={text => setInput(previous => previous.trim() ? `${previous} ${text}` : text)} />
         <form onSubmit={handleSend} className="input-form">
           <input
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp,image/bmp"
             style={{ display: 'none' }}
             ref={fileInputRef}
             onChange={handleFileChange}
@@ -362,7 +443,7 @@ const ChatArea: React.FC = () => {
             placeholder="Message Sentinel..."
             className="text-input"
           />
-          <button type="submit" className="submit-btn" disabled={!input.trim() || busy || !!confirmation || confirming || !isConnected}>
+          <button type="submit" className="submit-btn" disabled={!input.trim() || busy || dictating || !!confirmation || confirming || !isConnected}>
             <Send size={18} />
           </button>
         </form>

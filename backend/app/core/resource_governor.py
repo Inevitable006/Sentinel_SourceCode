@@ -3,7 +3,8 @@ import psutil
 from enum import Enum
 import time
 
-from app.core.gpu_monitor import gpu_monitor
+from app.core.gpu_monitor import effective_vram_percent, gpu_monitor
+from app.core.llama_sidecar import llama_sidecar
 
 class SystemState(Enum):
     IDLE = "idle"
@@ -60,6 +61,8 @@ class ResourceGovernor:
                     metrics = await asyncio.to_thread(self._read_metrics)
                     if not self.manual_override:
                         self._evaluate(*metrics)
+                    from app.core.ai_service import ai_service
+                    ai_service.check_engine()      # notice a GPU engine that died
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -67,11 +70,13 @@ class ResourceGovernor:
             await asyncio.sleep(self.poll_interval)
 
     def _read_metrics(self):
-        """Returns (cpu %, ram %, vram %). vram is 0.0 when no GPU reading is available."""
+        """Returns (cpu %, ram %, vram %). vram is 0.0 when no GPU reading is available.
+        VRAM held by Sentinel's own GPU model doesn't count as pressure: vram is how full the
+        rest of the GPU is (gpu_monitor.vram_pressure_percent), so the model is freed when the
+        owner's programs run short of VRAM, not merely because the model itself is large."""
         cpu = psutil.cpu_percent(interval=None)
         ram = psutil.virtual_memory().percent
-        gpu = gpu_monitor.snapshot()
-        vram = gpu["vram_percent"] if gpu["available"] and gpu["vram_percent"] is not None else 0.0
+        vram = effective_vram_percent(gpu_monitor.snapshot(), llama_sidecar.own_vram_mb())
         return cpu, ram, vram
 
     def _check_resources(self):
@@ -140,6 +145,7 @@ class ResourceGovernor:
             "ram_total_gb": round(vm.total / 1073741824, 1),
             "manual_override": self.manual_override,
             "gpu": gpu_monitor.peek(),
+            "sentinel_vram_mb": llama_sidecar.own_vram_mb(),
         }
 
 resource_governor = ResourceGovernor.get_instance()

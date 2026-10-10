@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Cpu, HardDrive, Activity, ShieldCheck, Globe, WifiOff, Server } from 'lucide-react';
-import { apiGet, timeAgo, type EgressStatus, type GovernorStatus } from '../../lib/backend';
+import { apiGet, timeAgo, type EgressStatus, type GovernorStatus, type ModelsInfo } from '../../lib/backend';
 import './SystemStatus.css';
 
 // Live readings from the local backend (refreshed every 5 s). Nothing here is made up:
 // when the backend can't be reached, the panel says so instead of showing numbers.
 type Health = { model_loaded: boolean; engine_status: string };
-type Models = { active_profile: string; profiles: { id: string; name: string }[] };
 
 const POLL_MS = 5000;
 const ONLINE_NOW_S = 60;
@@ -49,12 +48,14 @@ const SystemStatus: React.FC = () => {
           apiGet<GovernorStatus>('/api/governor/status'),
           apiGet<Health>('/health'),
           apiGet<EgressStatus>('/api/egress/status'),
-          apiGet<Models>('/api/models'),
+          apiGet<ModelsInfo>('/api/models'),
         ]);
         if (!alive) return;
         setLatency(Math.round(performance.now() - t0));
         setGov(g); setHealth(h); setEgress(e);
-        setModelName(m.profiles.find(p => p.id === m.active_profile)?.name ?? m.active_profile);
+        // What is loaded wins; otherwise the chosen profile. Never throw on an unexpected shape.
+        const profiles = Array.isArray(m?.profiles) ? m.profiles : [];
+        setModelName(m?.loaded?.name ?? profiles.find(p => p.id === m?.active_profile)?.name ?? String(m?.active_profile ?? ''));
         setReachable(true);
       } catch {
         if (alive) { setReachable(false); setLatency(null); }
@@ -105,7 +106,11 @@ const SystemStatus: React.FC = () => {
               <Bar label={`VRAM · ${gpu.name ?? 'GPU'}`}
                    right={`${gb(gpu.vram_used_mb)} / ${gb(gpu.vram_total_mb)} GB${gpu.temp_c != null ? ` · ${Math.round(gpu.temp_c)}°C` : ''}`}
                    value={gpu.vram_percent} />
-            ) : (
+            ) : null}
+            {gpu?.available && (gov?.sentinel_vram_mb ?? 0) > 0 && (
+              <div className="privacy-sub">Sentinel's model uses {gb(gov?.sentinel_vram_mb)} GB of it</div>
+            )}
+            {gpu?.available ? null : (
               <div className="metric"><span className="label">GPU</span><span className="value muted">{gpu ? 'Not detected' : '–'}</span></div>
             )}
           </div>
@@ -123,7 +128,7 @@ const SystemStatus: React.FC = () => {
                 ? <span className="value success">Offline mode</span>
                 : onlineNow
                   ? <span className="value warning">Online now</span>
-                  : <span className="value success">{egress ? 'Local only' : '–'}</span>}
+                  : <span className="value" title="Offline mode is off: approved tools may go online.">{egress ? 'Allowed (idle)' : '–'}</span>}
             </div>
             {last && (
               <div className="privacy-sub">

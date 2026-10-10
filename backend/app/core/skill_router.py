@@ -13,7 +13,7 @@ from app.core.skill_manifest import (
     SkillManifest, SkillCapability, GpuPolicy, SkillToolSchema
 )
 from app.core.skill_verifier import skill_verifier
-from app.core.tool_registry import tool_registry, ToolDefinition, ToolSchema, RiskTier
+from app.core.tool_registry import tool_registry, ToolDefinition, ToolSchema, RiskTier, failed, is_failure
 from app.core.audit_logger import audit_logger
 from app.core.gpu_monitor import gpu_monitor
 
@@ -119,20 +119,20 @@ class SkillRouter:
         """Internal executor called by tool_registry -> secure_runner -> here."""
         record = self._skills.get(skill_name)
         if not record:
-            return f"Error: Skill '{skill_name}' not found."
+            return failed(f"Error: Skill '{skill_name}' not found.")
 
         manifest = record.manifest
 
         # GPU policy check
         gpu_ok, gpu_msg = self._check_gpu_policy(manifest)
         if not gpu_ok:
-            return gpu_msg
+            return failed(gpu_msg)
 
         # ResourceGovernor check for GPU-heavy skills
         if SkillCapability.GPU_REQUIRED in manifest.required_capabilities:
             from app.core.resource_governor import resource_governor, SystemState
             if resource_governor.state in [SystemState.HIGH_LOAD, SystemState.EMERGENCY]:
-                return (
+                return failed(
                     f"Error: Skill '{skill_name}' requires GPU but system is in "
                     f"{resource_governor.state.value} state."
                 )
@@ -144,7 +144,7 @@ class SkillRouter:
         # Find and call the tool function
         func = self._resolve_tool_function(record, tool_name)
         if func is None:
-            return f"Error: Tool function '{tool_name}' not found in skill module '{skill_name}'."
+            return failed(f"Error: Tool function '{tool_name}' not found in skill module '{skill_name}'.")
 
         # Inject memory access if the skill has the capability
         enriched_args = self._inject_capabilities(manifest, args)
@@ -158,9 +158,9 @@ class SkillRouter:
                 result_str = result_str[:max_bytes] + "\n... [TRUNCATED by skill output cap]"
             record.last_used = time.time()
             record.call_count += 1
-            return result_str
+            return failed(result_str) if is_failure(result) else result_str
         except Exception as e:
-            return f"Error: Skill '{skill_name}' tool '{tool_name}' failed: {e}"
+            return failed(f"Error: Skill '{skill_name}' tool '{tool_name}' failed: {e}")
 
     def _resolve_tool_function(self, record: SkillRecord, tool_name: str) -> Optional[Callable]:
         """Resolves the tool function from the loaded module."""
@@ -227,7 +227,8 @@ class SkillRouter:
 
         manifest = record.manifest
         try:
-            module = importlib.import_module(manifest.entry_point)
+            # Re-verified at load time; release policy executes exactly the checked bytes.
+            module = skill_verifier.load_verified_module(manifest)
             record.module = module
             record.loaded_at = time.time()
             

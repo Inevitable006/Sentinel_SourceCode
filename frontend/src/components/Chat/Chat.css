@@ -196,3 +196,11 @@
   color: var(--text-muted);
   cursor: not-allowed;
 }
+
+.dictation-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.dictation-controls .action-btn { gap: 6px; }
+.dictation-controls .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.dictation-status { font-size: 0.78rem; color: var(--text-secondary); }
+
+.message-code { white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(0, 0, 0, 0.3); padding: 0.5rem; border-radius: 6px; margin: 0.4rem 0; font-size: 0.85em; }
+
