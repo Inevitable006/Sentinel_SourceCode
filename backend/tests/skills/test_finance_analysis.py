@@ -1,8 +1,18 @@
+import socket
 import pytest
 from unittest.mock import patch, MagicMock
 from skills.finance_analysis import get_market_data
 
 class TestFinanceAnalysis:
+
+    @pytest.fixture(autouse=True)
+    def _fake_public_dns(self):
+        """Fake public DNS answer so the real SSRF checks run without a real lookup
+        (the test network guard in conftest.py blocks internet access)."""
+        fake = lambda host, port, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.215.14", port))]
+        with patch("app.core.network_utils.socket.getaddrinfo", side_effect=fake):
+            yield
+
     
     @patch("app.core.network_utils.httpx.AsyncClient.request")
     def test_get_market_data_success(self, mock_request):

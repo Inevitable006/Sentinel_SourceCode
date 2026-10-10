@@ -3,6 +3,9 @@ import psutil
 from enum import Enum
 import time
 
+from app.core.gpu_monitor import effective_vram_percent, gpu_monitor
+from app.core.llama_sidecar import llama_sidecar
+
 class SystemState(Enum):
     IDLE = "idle"
     INTERACTIVE = "interactive"
@@ -40,31 +43,47 @@ class ResourceGovernor:
             loop = asyncio.get_event_loop()
             self._task = loop.create_task(self._monitor_loop())
             print("[ResourceGovernor] Started background monitoring.")
+
+    def stop(self):
+        """Stops the background monitoring loop (called on app shutdown)."""
+        if self._task is not None:
+            self._task.cancel()
+            self._task = None
+        gpu_monitor.shutdown()
             
     async def _monitor_loop(self):
         while True:
             if not self.manual_override:
-                self._check_resources()
+                try:
+                    # Blocking reads (psutil, GPU) run in a worker thread so the event loop
+                    # (chat streaming, WebSocket) never waits on them. State changes and
+                    # model unloading stay on the event-loop thread.
+                    metrics = await asyncio.to_thread(self._read_metrics)
+                    if not self.manual_override:
+                        self._evaluate(*metrics)
+                    from app.core.ai_service import ai_service
+                    ai_service.check_engine()      # notice a GPU engine that died
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    print(f"[ResourceGovernor] Monitoring error (will retry): {type(e).__name__}: {e}")
             await asyncio.sleep(self.poll_interval)
-            
-    def _check_resources(self):
+
+    def _read_metrics(self):
+        """Returns (cpu %, ram %, vram %). vram is 0.0 when no GPU reading is available.
+        VRAM held by Sentinel's own GPU model doesn't count as pressure: vram is how full the
+        rest of the GPU is (gpu_monitor.vram_pressure_percent), so the model is freed when the
+        owner's programs run short of VRAM, not merely because the model itself is large."""
         cpu = psutil.cpu_percent(interval=None)
-        mem = psutil.virtual_memory()
-        ram = mem.percent
-        vram = 0
-        
-        # Try to get VRAM if NVIDIA SMI is available
-        import subprocess
-        try:
-            result = subprocess.run(['nvidia-smi', '--query-gpu=memory.used,memory.total', '--format=csv,noheader,nounits'], 
-                                    capture_output=True, text=True, timeout=2)
-            if result.returncode == 0:
-                used, total = map(float, result.stdout.strip().split(',')[0:2])
-                if total > 0:
-                    vram = (used / total) * 100
-        except Exception:
-            pass
-        
+        ram = psutil.virtual_memory().percent
+        vram = effective_vram_percent(gpu_monitor.snapshot(), llama_sidecar.own_vram_mb())
+        return cpu, ram, vram
+
+    def _check_resources(self):
+        """One synchronous check (tests and callers outside the monitor loop)."""
+        self._evaluate(*self._read_metrics())
+
+    def _evaluate(self, cpu, ram, vram):
         # Check emergency thresholds
         if cpu >= self.cpu_emerg_threshold or ram >= self.ram_emerg_threshold or vram >= 95.0:
             self.emergency_count += 1
@@ -75,20 +94,23 @@ class ResourceGovernor:
             
             # Check high load thresholds
             if cpu >= self.cpu_high_threshold or ram >= self.ram_high_threshold or vram >= 85.0:
-                self.high_load_count += 1
+                # A spike during recovery restarts the clean-check countdown.
+                self.high_load_count = max(self.high_load_count, 0) + 1
                 if self.high_load_count >= 2: # 10 seconds sustained
                     if self.state != SystemState.EMERGENCY:
                         self._transition_to(SystemState.HIGH_LOAD)
             else:
-                self.high_load_count = 0
-                
                 # If we were in high load/emergency and it subsided
                 if self.state in [SystemState.HIGH_LOAD, SystemState.EMERGENCY]:
-                    # Require 3 consecutive clean checks (15 seconds) to downgrade back to interactive
-                    self.high_load_count -= 1
+                    # Require 3 consecutive clean checks (15 seconds) to downgrade back to interactive.
+                    # (Previously the counter was reset to 0 on every clean check, so it never
+                    # reached -3 and Sentinel stayed in HIGH_LOAD/EMERGENCY until restart.)
+                    self.high_load_count = min(self.high_load_count, 0) - 1
                     if self.high_load_count <= -3:
                         self._transition_to(SystemState.INTERACTIVE)
                         self.high_load_count = 0
+                else:
+                    self.high_load_count = 0
 
     def _transition_to(self, new_state: SystemState):
         if self.state != new_state:
@@ -114,11 +136,16 @@ class ResourceGovernor:
             self.high_load_count = 0
 
     def get_status(self):
+        vm = psutil.virtual_memory()
         return {
             "state": self.state.value,
             "cpu_percent": psutil.cpu_percent(),
-            "ram_percent": psutil.virtual_memory().percent,
-            "manual_override": self.manual_override
+            "ram_percent": vm.percent,
+            "ram_used_gb": round((vm.total - vm.available) / 1073741824, 1),
+            "ram_total_gb": round(vm.total / 1073741824, 1),
+            "manual_override": self.manual_override,
+            "gpu": gpu_monitor.peek(),
+            "sentinel_vram_mb": llama_sidecar.own_vram_mb(),
         }
 
 resource_governor = ResourceGovernor.get_instance()

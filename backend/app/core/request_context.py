@@ -27,8 +27,18 @@ class RequestContextRegistry:
         with self._lock:
             task = self._active_tasks.get(request_id)
             if task and not task.done():
-                task.cancel()
+                # The task runs on a worker thread's own event loop: cancel it from that loop.
+                task.get_loop().call_soon_threadsafe(task.cancel)
                 return True
         return False
+
+
+def cancel_request_work(request_id: str) -> None:
+    """Stops everything running for one request: child processes and network tasks."""
+    if not request_id:
+        return
+    from app.core.safe_process import safe_process
+    safe_process.cancel_job(request_id)
+    request_context.cancel_request(request_id)
 
 request_context = RequestContextRegistry()

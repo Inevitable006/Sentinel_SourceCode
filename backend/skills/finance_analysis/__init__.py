@@ -8,6 +8,7 @@ import asyncio
 import json
 from app.core.network_utils import SafeAsyncClient
 from app.core.request_context import request_context
+from app.core.tool_registry import failed
 
 async def _async_get_market_data(symbol: str) -> str:
     """Asynchronously fetch Yahoo Finance chart data using SafeAsyncClient."""
@@ -21,7 +22,7 @@ async def _async_get_market_data(symbol: str) -> str:
             response = await client.safe_request("GET", url, headers=headers, timeout=5.0)
             
         if response.status_code != 200:
-            return f"<untrusted_content>Error: API returned status code {response.status_code} for symbol {symbol}</untrusted_content>"
+            return failed(f"<untrusted_content>Error: API returned status code {response.status_code} for symbol {symbol}</untrusted_content>")
             
         data = response.json()
         
@@ -43,16 +44,19 @@ async def _async_get_market_data(symbol: str) -> str:
             raw_result = json.dumps(output, indent=2)
             return f"<untrusted_content>{raw_result}</untrusted_content>"
         else:
-            return f"<untrusted_content>Error: No data found for symbol {symbol}</untrusted_content>"
+            return failed(f"<untrusted_content>Error: No data found for symbol {symbol}</untrusted_content>")
             
     except Exception as e:
-        return f"<untrusted_content>Network Error fetching data for {symbol}: {str(e)}</untrusted_content>"
+        return failed(f"<untrusted_content>Network Error fetching data for {symbol}: {str(e)}</untrusted_content>")
 
 def get_market_data(symbol: str, request_id: str = None) -> str:
     """
     Fetches real-time or historical stock/crypto price data for analysis.
     Output is wrapped in <untrusted_content> tags.
     """
+    if not request_id:
+        from app.core.safe_process import current_job
+        request_id = current_job.get()
     # Create an event loop for synchronous invocation
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -66,12 +70,12 @@ def get_market_data(symbol: str, request_id: str = None) -> str:
         result = loop.run_until_complete(task)
         # Cap at 10KB just in case
         if len(result) > 10240:
-            result = result[:10240] + "\n... [TRUNCATED]</untrusted_content>"
+            result = type(result)(result[:10240] + "\n... [TRUNCATED]</untrusted_content>")
         return result
     except asyncio.CancelledError:
-        return "Error: Finance research task was cancelled by the user."
+        return failed("Error: Finance research task was cancelled by the user.")
     except Exception as e:
-        return f"<untrusted_content>System Error: {e}</untrusted_content>"
+        return failed(f"<untrusted_content>System Error: {e}</untrusted_content>")
     finally:
         if request_id:
             request_context.unregister_task(request_id)

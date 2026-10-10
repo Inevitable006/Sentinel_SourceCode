@@ -1,16 +1,45 @@
 from typing import Any, Dict
-from app.core.tool_registry import tool_registry, ToolDefinition, ToolSchema, RiskTier
+from app.core.tool_registry import tool_registry, ToolDefinition, ToolSchema, RiskTier, failed, is_failure
 from app.core.policy_engine import policy_engine, PolicyDecision
 from app.core.token_service import token_service
 from app.core.audit_logger import audit_logger
+from app.core.egress import tool_context
 import traceback
 import psutil
 import time
 
+# Core tools that duplicate a skill's function. Turning the skill off must block these too.
+CORE_TOOL_SKILLS = {
+    "run_system_op": "system_ops",
+    "search_web": "web_research",
+    "get_service_health": "core_diagnostics",
+    "get_governor_status": "core_diagnostics",
+    "get_model_state": "core_diagnostics",
+    "get_app_diagnostics": "core_diagnostics",
+    "get_system_telemetry": "core_diagnostics",
+}
+
+
+def skill_for_tool(tool_name: str):
+    from app.core.skill_router import skill_router
+    manifest = skill_router.resolve_skill(tool_name)
+    if manifest:
+        return manifest.name
+    return CORE_TOOL_SKILLS.get(tool_name)
+
+
 class SecureRunner:
-    def execute(self, tool_name: str, args: dict, session_id: str, request_id: str = None, token: str = None) -> Dict[str, Any]:
+    def execute(self, tool_name: str, args: dict, session_id: str, request_id: str = None, token: str = None, force_confirmation: bool = False) -> Dict[str, Any]:
         """Executes a tool with strict policy enforcement."""
         
+        # 0. Owner skill switches apply to every route and alias (skill tool or core tool).
+        owner_skill = skill_for_tool(tool_name)
+        if owner_skill:
+            from app.workspace_routes import skill_enabled
+            if not skill_enabled(owner_skill):
+                audit_logger.log_event("execution_denied_skill_disabled", {"tool_name": tool_name, "skill": owner_skill, "session_id": session_id})
+                return {"status": "error", "message": f"The '{owner_skill}' skill is turned off in Skills settings."}
+
         # 1. Policy Evaluation
         decision, reason = policy_engine.evaluate(tool_name, args, session_id)
         
@@ -18,7 +47,7 @@ class SecureRunner:
             return {"status": "error", "message": f"Execution denied by policy: {reason}"}
             
         # 2. Token Validation for Needs Confirmation
-        if decision == PolicyDecision.NEEDS_CONFIRMATION:
+        if decision == PolicyDecision.NEEDS_CONFIRMATION or force_confirmation or token is not None:
             if not token:
                 # Generate token and return pause
                 tool_def = tool_registry.get_tool(tool_name)
@@ -74,14 +103,27 @@ class SecureRunner:
             if "request_id" in sig.parameters:
                 exec_args["request_id"] = request_id
                 
-            result = tool_def.executor(**exec_args)
+            # The egress guard lets a tool reach the internet only if it declared network_access.
+            network_ok = "network_access" in (tool_def.tool_schema.required_capabilities or [])
+            from app.core.safe_process import current_job
+            job_token = current_job.set(request_id or session_id)
+            try:
+                with tool_context(tool_name, network_ok):
+                    result = tool_def.executor(**exec_args)
+            finally:
+                current_job.reset(job_token)
             duration = time.time() - start_time
-            
+
             # Truncate large outputs to prevent context overflow (10KB limit)
             result_str = str(result)
             if len(result_str) > 10240:
                 result_str = result_str[:10240] + "... [TRUNCATED]"
-                
+
+            # A tool that reported failure is an error, never "Action completed".
+            if is_failure(result):
+                audit_logger.log_event("execution_failed", {"tool_name": tool_name, "duration": duration, "error": "tool reported failure", "session_id": session_id})
+                return {"status": "error", "message": f"Tool execution failed: {result_str}"}
+
             audit_logger.log_event("execution_success", {"tool_name": tool_name, "duration": duration, "session_id": session_id})
             return {"status": "success", "data": result_str}
             
@@ -203,13 +245,14 @@ def run_system_op(operation: str, target: str = "", session_id: str = "default")
         
     elif operation == "list_directory":
         # Native Python implementation (no shell injection possible)
-        allowed_root = r"C:\Users\shamb\OneDrive\Desktop\New one\Sentinel_SourceCode"
+        from app.core.paths import workspace_root
+        allowed_root = str(workspace_root())
         target_path = os.path.realpath(target) if target else os.path.realpath(allowed_root)
         
         # Path validation: canonical containment check immune to sibling-prefix,
         # case variation, symlink/junction, and traversal attacks
         if not _is_path_contained(target_path, allowed_root):
-            return "Error: Path traversal blocked. Cannot access directories outside Sentinel_SourceCode."
+            return failed("Error: Path traversal blocked. Cannot access directories outside the approved workspace.")
             
         try:
             results = []
@@ -222,37 +265,45 @@ def run_system_op(operation: str, target: str = "", session_id: str = "default")
                 })
             return json.dumps(results)
         except Exception as e:
-            return f"Error reading directory: {str(e)}"
+            return failed(f"Error reading directory: {str(e)}")
             
     elif operation == "ping_host":
         # Native binary with safe argument array
         if not re.match(r"^[\w\.-]+$", target):
-            return "Error: Invalid hostname for ping."
+            return failed("Error: Invalid hostname for ping.")
             
+        # ping is network traffic too: the egress guard blocks it in Offline mode and logs it.
+        from app.core.egress import EgressBlocked, egress_guard, tool_context
+        try:
+            with tool_context("ping_host", network_allowed=True):   # this operation was already approved
+                rec = egress_guard.check("PING", target)
+        except EgressBlocked as e:
+            return failed(f"Error: {e}")
         cmd = [r"c:\windows\system32\ping.exe", "-n", "4", target]
-        success, stdout, stderr = safe_process.run_command(cmd, job_id=session_id)
-        return stdout if success else stderr
+        success, stdout, stderr = safe_process.run_command(cmd)
+        egress_guard.record_result(rec, status=0 if success else 1)
+        return stdout if success else failed(stderr or "Error: command failed.")
         
     elif operation == "get_processes":
         # Fixed PowerShell command string, absolutely ZERO interpolation
         cmd = ps_base + ["Get-Process | Select-Object Id, ProcessName, CPU, WorkingSet | ConvertTo-Json -Depth 1"]
-        success, stdout, stderr = safe_process.run_command(cmd, job_id=session_id)
-        return stdout if success else stderr
+        success, stdout, stderr = safe_process.run_command(cmd)
+        return stdout if success else failed(stderr or "Error: command failed.")
         
     elif operation == "get_services":
         # Fixed PowerShell command string, absolutely ZERO interpolation
         cmd = ps_base + ["Get-Service | Where-Object Status -eq 'Running' | Select-Object Name, DisplayName | ConvertTo-Json -Depth 1"]
-        success, stdout, stderr = safe_process.run_command(cmd, job_id=session_id)
-        return stdout if success else stderr
+        success, stdout, stderr = safe_process.run_command(cmd)
+        return stdout if success else failed(stderr or "Error: command failed.")
         
     elif operation == "get_ip_configuration":
         # Fixed PowerShell command string, absolutely ZERO interpolation
         cmd = ps_base + ["Get-NetIPAddress | Select-Object InterfaceAlias, IPAddress | ConvertTo-Json -Depth 1"]
-        success, stdout, stderr = safe_process.run_command(cmd, job_id=session_id)
-        return stdout if success else stderr
+        success, stdout, stderr = safe_process.run_command(cmd)
+        return stdout if success else failed(stderr or "Error: command failed.")
         
     else:
-        return f"Error: Unknown operation '{operation}'"
+        return failed(f"Error: Unknown operation '{operation}'")
 
 tool_registry.register(ToolDefinition(
     tool_schema=ToolSchema(

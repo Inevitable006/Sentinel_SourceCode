@@ -2,40 +2,50 @@ import json
 import time
 import asyncio
 import re
-from app.core.paths import SENTINEL_DATA_DIR
+import urllib.parse
 from app.core.request_context import request_context
 from app.core.network_utils import SafeAsyncClient
-
-HISTORY_FILE = SENTINEL_DATA_DIR / "research_history.json"
+from app.core.tool_registry import failed
 
 class ResearchService:
+    """Web search + page fetch. History is kept in the encrypted database (table research_history),
+    so it is unreadable while Sentinel is locked."""
+
     def __init__(self):
         self.local_mode = False
-        self._load_history()
-
-    def _load_history(self):
-        if HISTORY_FILE.exists():
-            try:
-                with open(HISTORY_FILE, "r") as f:
-                    self.history = json.load(f)
-            except Exception:
-                self.history = []
-        else:
-            self.history = []
-
-    def _save_history(self):
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(self.history, f, indent=4)
 
     def set_local_mode(self, enabled: bool):
         self.local_mode = enabled
 
     def clear_history(self):
-        self.history = []
-        self._save_history()
+        from app.db.database import SessionLocal
+        from app.db.models import ResearchEntry
+        db = SessionLocal()
+        try:
+            db.query(ResearchEntry).delete()
+            db.commit()
+        finally:
+            db.close()
 
-    def get_history(self):
-        return self.history
+    def get_history(self, limit: int = 200):
+        from app.db.database import SessionLocal
+        from app.db.models import ResearchEntry
+        db = SessionLocal()
+        try:
+            rows = db.query(ResearchEntry).order_by(ResearchEntry.timestamp.desc()).limit(limit).all()
+            return [{"query": r.query, "url": r.url, "title": r.title, "timestamp": r.timestamp} for r in rows]
+        finally:
+            db.close()
+
+    def _record(self, entries):
+        from app.db.database import SessionLocal
+        from app.db.models import ResearchEntry
+        db = SessionLocal()
+        try:
+            db.add_all([ResearchEntry(**e) for e in entries])
+            db.commit()
+        finally:
+            db.close()
 
     async def _async_search(self, query: str) -> str:
         """Asynchronous DDG search execution using SafeAsyncClient."""
@@ -43,12 +53,12 @@ class ResearchService:
         # This function only queries the fixed trusted search endpoint and returns metadata/snippets.
         
         try:
-            url = f"https://html.duckduckgo.com/html/?q={query}"
+            url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
             async with SafeAsyncClient() as client:
                 response = await client.safe_request("GET", url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=5.0)
             
             if response.status_code != 200:
-                return f"Search failed with status: {response.status_code}"
+                return failed(f"Search failed with status: {response.status_code}")
                 
             html = response.text
             
@@ -64,7 +74,6 @@ class ResearchService:
                 
                 # duckduckgo redirects via /l/?uddg=...
                 if "uddg=" in url_raw:
-                    import urllib.parse
                     parsed = urllib.parse.parse_qs(urllib.parse.urlparse(url_raw).query)
                     if "uddg" in parsed:
                         url_raw = parsed["uddg"][0]
@@ -76,20 +85,21 @@ class ResearchService:
             
             output = f"Search Results for '{query}' (Retrieved at {time.strftime('%Y-%m-%d %H:%M:%S')}):\n\n"
             
+            now = time.time()
             for r in results:
                 url = r.get("href")
                 title = r.get("title")
                 snippet = r.get("body")
-                
-                self.history.append({"query": query, "url": url, "title": title, "timestamp": time.time()})
-                
                 output += f"Source: [{title}]({url})\n"
                 output += f"Snippet: {snippet}\n\n"
-                
-            self._save_history()
+            try:
+                self._record([{"query": query, "url": r.get("href"), "title": r.get("title"), "timestamp": now}
+                              for r in results])
+            except Exception as e:   # e.g. locked: the answer still goes back, history is skipped
+                print(f"[Research] history not saved ({type(e).__name__})")
             return output
         except Exception as e:
-            return f"Web search failed: {e}"
+            return failed(f"Web search failed: {e}")
 
     def search(self, query: str, request_id: str = None) -> str:
         """
@@ -98,10 +108,13 @@ class ResearchService:
         for genuine cancellation.
         """
         if self.local_mode:
-            return "System Error: Local Only mode is enabled. Web research is disabled."
+            return failed("System Error: Local Only mode is enabled. Web research is disabled.")
 
         # We must run the async search within a new event loop or the current one
         # since this is called from a synchronous thread executor.
+        if not request_id:
+            from app.core.safe_process import current_job
+            request_id = current_job.get()   # the request SecureRunner is running this for
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
@@ -114,9 +127,9 @@ class ResearchService:
             result = loop.run_until_complete(task)
             return result
         except asyncio.CancelledError:
-            return "Error: Web research task was cancelled by the user."
+            return failed("Error: Web research task was cancelled by the user.")
         except Exception as e:
-            return f"Web search failed: {e}"
+            return failed(f"Web search failed: {e}")
         finally:
             if request_id:
                 request_context.unregister_task(request_id)
@@ -131,7 +144,7 @@ class ResearchService:
                 response = await client.safe_request("GET", url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=5.0)
             
             if response.status_code != 200:
-                return f"Fetch failed with status: {response.status_code}"
+                return failed(f"Fetch failed with status: {response.status_code}")
                 
             html = response.text
             
@@ -148,15 +161,18 @@ class ResearchService:
                 
             return text
         except Exception as e:
-            return f"Fetch failed: {e}"
+            return failed(f"Fetch failed: {e}")
 
     def fetch_url(self, url: str, request_id: str = None) -> str:
         """
         Executes a safe URL fetch.
         """
         if self.local_mode:
-            return "System Error: Local Only mode is enabled. Web research is disabled."
+            return failed("System Error: Local Only mode is enabled. Web research is disabled.")
 
+        if not request_id:
+            from app.core.safe_process import current_job
+            request_id = current_job.get()   # the request SecureRunner is running this for
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
@@ -169,9 +185,9 @@ class ResearchService:
             result = loop.run_until_complete(task)
             return result
         except asyncio.CancelledError:
-            return "Error: Web research task was cancelled by the user."
+            return failed("Error: Web research task was cancelled by the user.")
         except Exception as e:
-            return f"Fetch failed: {e}"
+            return failed(f"Fetch failed: {e}")
         finally:
             if request_id:
                 request_context.unregister_task(request_id)

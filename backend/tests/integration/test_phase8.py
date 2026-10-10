@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from sqlalchemy import text
-from app.db.database import SessionLocal, engine
+from app.db.database import SessionLocal, get_engine, init_db, is_open, open_database
 from app.db import models
 from app.core.memory_service import memory_service
 from app.core.paths import SENTINEL_DATA_DIR
@@ -9,6 +9,12 @@ from app.core.paths import SENTINEL_DATA_DIR
 DB_PATH = SENTINEL_DATA_DIR / 'jarvis_memory.db'
 
 def run_tests():
+    if not is_open():
+        # Script mode: a throwaway encrypted database in its own temp folder, so it never
+        # collides with another database (e.g. pytest's) in the same data dir.
+        import tempfile
+        open_database(os.urandom(32), path=os.path.join(tempfile.mkdtemp(prefix='sentinel_phase8_'), 'phase8.db'))
+    init_db()  # tables + memory FTS index (works on a fresh data dir too)
     db = SessionLocal()
     
     print("\n--- PHASE 8 ACCEPTANCE TESTS ---")
@@ -98,11 +104,8 @@ def run_tests():
             
         # J. DATABASE INTEGRITY
         print("Test J (DB INTEGRITY): ", end="")
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA integrity_check")
-        status = cursor.fetchone()[0]
-        conn.close()
+        with get_engine().connect() as conn:
+            status = conn.execute(text("PRAGMA integrity_check")).scalar()
         if status == "ok":
             print("PASS")
             tests_passed += 1

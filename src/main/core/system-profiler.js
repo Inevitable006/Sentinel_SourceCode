@@ -23,38 +23,14 @@ const os = require('os');
 const { appPaths } = require('./app-paths');
 const { logger } = require('./logger');
 
-// AI model recommendations per tier
+// Which backend model profile suits each hardware tier (backend/app/core/model_registry.py).
+// The backend runs models with llama.cpp; this is only a hint, the backend makes the final choice.
 const MODEL_RECOMMENDATIONS = {
-  minimal: {
-    ollama: null,                    // Don't run Ollama
-    transformers: null,              // Don't run Transformers.js
-    mode: 'fallback',
-    reason: 'Insufficient hardware for local AI'
-  },
-  low: {
-    ollama: ['qwen2.5:0.5b', 'tinyllama'],
-    transformers: 'onnx-community/Qwen2.5-0.5B-Instruct',
-    mode: 'ollama',
-    reason: 'Limited RAM — using smallest available model'
-  },
-  medium: {
-    ollama: ['qwen2.5:1.5b', 'llama3.2:1b', 'phi3:mini', 'qwen2.5:0.5b'],
-    transformers: 'onnx-community/Qwen2.5-0.5B-Instruct',
-    mode: 'ollama',
-    reason: 'Moderate hardware — using efficient model'
-  },
-  high: {
-    ollama: ['qwen2.5:3b', 'llama3.2:3b', 'phi3:mini', 'gemma2:2b', 'qwen2.5:1.5b'],
-    transformers: 'onnx-community/Qwen2.5-0.5B-Instruct',
-    mode: 'ollama',
-    reason: 'Strong hardware — using capable model'
-  },
-  extreme: {
-    ollama: ['qwen2.5:7b', 'llama3.1:8b', 'qwen2.5:3b', 'llama3.2:3b'],
-    transformers: 'onnx-community/Qwen2.5-0.5B-Instruct',
-    mode: 'ollama',
-    reason: 'Powerful hardware — using large model'
-  }
+  minimal: { profile: null, engine: null, reason: 'Insufficient hardware for a local model' },
+  low: { profile: 'lightweight', engine: 'llama.cpp', reason: 'Limited RAM: Qwen 2.5 1.5B' },
+  medium: { profile: 'lightweight', engine: 'llama.cpp', reason: 'Moderate hardware: Qwen 2.5 1.5B' },
+  high: { profile: 'balanced', engine: 'llama.cpp', reason: 'Strong hardware: Llama 3.2 3B' },
+  extreme: { profile: 'heavy', engine: 'llama.cpp', reason: 'Powerful hardware: Qwen 2.5 7B' }
 };
 
 // UI settings per tier

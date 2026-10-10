@@ -26,7 +26,6 @@
     },
     "files": [
       "src/main/**/*",
-      "src/preload.js",
       "frontend/dist/**/*",
       "assets/**/*",
       "package.json"
@@ -37,7 +36,6 @@
         "to": "backend",
         "filter": [
           "**/*",
-          "!llama-bin.zip",
           "!llama-bin/*.dll",
           "!llama-bin/*.exe",
           "!models/**",
@@ -57,7 +55,18 @@
           "!**/*.log",
           "!**/audit.log",
           "!**/research_history.json",
-          "!**/models.json"
+          "!**/models.json",
+          "!.venv/**",
+          "!llama-bin/**",
+          "!**/*.key"
+        ]
+      },
+      {
+        "from": "build/python-runtime",
+        "to": "python",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**"
         ]
       }
     ]
@@ -65,14 +74,10 @@
   "author": "SENTINEL Project",
   "license": "MIT",
   "devDependencies": {
-    "electron-builder": "^26.15.3",
-    "electron": "^44.0.0"
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.5.0",
-    "chokidar": "^5.0.0",
-    "electron-store": "^10.0.0",
-    "marked": "^15.0.0",
     "systeminformation": "^5.25.0"
   }
 }

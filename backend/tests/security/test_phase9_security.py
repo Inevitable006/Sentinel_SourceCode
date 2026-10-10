@@ -25,6 +25,10 @@ def check(name, condition):
     else:
         print(f"  FAIL: {name}")
         failed += 1
+    # Under pytest a failed check must fail the test (previously it only printed
+    # "FAIL" and the test still passed). Script mode keeps counting as before.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        assert condition, name
 
 import ast
 
@@ -696,11 +700,14 @@ def test_invariant_21():
         python_exe = "python"
 
     test_session_token = "behavioral_test_token_123"
+    import tempfile
     env = {
         **os.environ,
         "SENTINEL_DISABLE_LLAMA": "1",
         "SENTINEL_BACKEND_PORT": str(test_port),
-        "SENTINEL_SESSION_TOKEN": test_session_token
+        "SENTINEL_SESSION_TOKEN": test_session_token,
+        # Its own data folder: a fresh backend starts locked and creates its own keystore + database.
+        "APPDATA": tempfile.mkdtemp(prefix="sentinel_inv21_"),
     }
 
     proc = subprocess.Popen(
@@ -726,8 +733,16 @@ def test_invariant_21():
         if not ready:
             return
 
+        # 0. A fresh install is locked until the owner sets a PIN.
+        setup_req = urllib.request.Request(
+            f"http://127.0.0.1:{test_port}/api/unlock/setup", method="POST",
+            data=json.dumps({"pin": "inv21-owner-pin"}).encode(),
+            headers={"X-Sentinel-Session": test_session_token, "Content-Type": "application/json"})
+        with urllib.request.urlopen(setup_req, timeout=30) as r:
+            check("Owner setup on a fresh backend", r.status == 200 and "recovery_key" in json.loads(r.read()))
+
         # 1. Authenticated WebSocket connection proving no model load occurs
-        ws = websocket.create_connection(f"ws://127.0.0.1:{test_port}/ws/chat?token={test_session_token}", timeout=2)
+        ws = websocket.create_connection(f"ws://127.0.0.1:{test_port}/ws/chat", subprotocols=["sentinel.v1", test_session_token], timeout=2)
         ws.send(json.dumps({"text": "Hello"}))
         
         found_msg = False

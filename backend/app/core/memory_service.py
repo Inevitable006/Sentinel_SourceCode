@@ -123,6 +123,7 @@ class MemoryService:
     def forget(self, db: Session, content_match: str) -> bool:
         """Deletes a memory matching the string."""
         from sqlalchemy import text
+        db.execute(text("PRAGMA secure_delete = ON"))   # overwrite what is deleted
         safe_content = content_match.replace("'", "''").replace('"', '""')
         query = text(f"""
             SELECT id FROM fts_memory_items 

@@ -9,6 +9,19 @@ class RiskTier(int, Enum):
     TIER_3 = 3 # Create/modify files, launch known apps
     TIER_4 = 4 # Delete data, security settings, credentials
 
+class ToolFailure(str):
+    """A tool result that reports failure. It is still readable text, but
+    SecureRunner returns it as status=error so a failure is never shown as success."""
+
+
+def failed(message: str) -> ToolFailure:
+    return ToolFailure(message)
+
+
+def is_failure(result: Any) -> bool:
+    return isinstance(result, ToolFailure)
+
+
 class ToolSchema(BaseModel):
     name: str
     version: str = "1.0.0"

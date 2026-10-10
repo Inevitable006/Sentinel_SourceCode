@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* Privacy: no web fonts. The UI used to fetch Inter from Google Fonts on every start
+   (an outbound request that reveals when Sentinel runs). System fonts are used instead;
+   'Inter' still applies if it is installed locally. */
 
 :root {
   /* Premium Dark Theme Palette */

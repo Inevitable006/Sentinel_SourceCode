@@ -7,6 +7,7 @@ Capabilities: None
 import os
 from pathlib import Path
 from app.core.paths import SENTINEL_DATA_DIR
+from app.core.tool_registry import failed
 
 # The root directory of the project
 PROJECT_ROOT = Path(os.path.realpath(os.path.join(os.path.dirname(__file__), "../../../"))).resolve()
@@ -38,10 +39,10 @@ def read_document(file_path: str) -> str:
     Enforces canonical path containment and output truncation (10KB limit).
     """
     if not _is_path_contained(file_path, ALLOWED_DIRECTORIES):
-        return f"Security Error: Path traversal blocked. The file '{file_path}' is outside the allowed safe directories."
+        return failed(f"Security Error: Path traversal blocked. The file '{file_path}' is outside the allowed safe directories.")
         
     if not os.path.isfile(file_path):
-        return f"Error: File not found or is not a regular file: {file_path}"
+        return failed(f"Error: File not found or is not a regular file: {file_path}")
         
     try:
         # Detect encoding simply by trying utf-8 then falling back to latin-1
@@ -58,4 +59,4 @@ def read_document(file_path: str) -> str:
             
         return content
     except Exception as e:
-        return f"System Error reading document: {str(e)}"
+        return failed(f"System Error reading document: {str(e)}")

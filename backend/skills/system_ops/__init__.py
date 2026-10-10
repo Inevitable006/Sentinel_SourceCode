@@ -8,6 +8,7 @@ import re
 import os
 import json
 from datetime import datetime
+from app.core.tool_registry import failed
 
 
 def _is_path_contained(child: str, parent: str) -> bool:
@@ -39,11 +40,12 @@ def run_system_op(operation: str, target: str = "", session_id: str = "default")
         return target
 
     elif operation == "list_directory":
-        allowed_root = r"C:\Users\shamb\OneDrive\Desktop\New one\Sentinel_SourceCode"
+        from app.core.paths import workspace_root
+        allowed_root = str(workspace_root())
         target_path = os.path.realpath(target) if target else os.path.realpath(allowed_root)
 
         if not _is_path_contained(target_path, allowed_root):
-            return "Error: Path traversal blocked. Cannot access directories outside Sentinel_SourceCode."
+            return failed("Error: Path traversal blocked. Cannot access directories outside the approved workspace.")
 
         try:
             results = []
@@ -56,29 +58,29 @@ def run_system_op(operation: str, target: str = "", session_id: str = "default")
                 })
             return json.dumps(results)
         except Exception as e:
-            return f"Error reading directory: {str(e)}"
+            return failed(f"Error reading directory: {str(e)}")
 
     elif operation == "ping_host":
         if not re.match(r"^[\w\.-]+$", target):
-            return "Error: Invalid hostname for ping."
+            return failed("Error: Invalid hostname for ping.")
         cmd = [r"c:\windows\system32\ping.exe", "-n", "4", target]
-        success, stdout, stderr = safe_process.run_command(cmd, job_id=session_id)
-        return stdout if success else stderr
+        success, stdout, stderr = safe_process.run_command(cmd)
+        return stdout if success else failed(stderr or "Error: command failed.")
 
     elif operation == "get_processes":
         cmd = ps_base + ["Get-Process | Select-Object Id, ProcessName, CPU, WorkingSet | ConvertTo-Json -Depth 1"]
-        success, stdout, stderr = safe_process.run_command(cmd, job_id=session_id)
-        return stdout if success else stderr
+        success, stdout, stderr = safe_process.run_command(cmd)
+        return stdout if success else failed(stderr or "Error: command failed.")
 
     elif operation == "get_services":
         cmd = ps_base + ["Get-Service | Where-Object Status -eq 'Running' | Select-Object Name, DisplayName | ConvertTo-Json -Depth 1"]
-        success, stdout, stderr = safe_process.run_command(cmd, job_id=session_id)
-        return stdout if success else stderr
+        success, stdout, stderr = safe_process.run_command(cmd)
+        return stdout if success else failed(stderr or "Error: command failed.")
 
     elif operation == "get_ip_configuration":
         cmd = ps_base + ["Get-NetIPAddress | Select-Object InterfaceAlias, IPAddress | ConvertTo-Json -Depth 1"]
-        success, stdout, stderr = safe_process.run_command(cmd, job_id=session_id)
-        return stdout if success else stderr
+        success, stdout, stderr = safe_process.run_command(cmd)
+        return stdout if success else failed(stderr or "Error: command failed.")
 
     else:
-        return f"Error: Unknown operation '{operation}'"
+        return failed(f"Error: Unknown operation '{operation}'")

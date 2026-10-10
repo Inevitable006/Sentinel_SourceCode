@@ -1,9 +1,25 @@
+# Sentinel backend runtime dependencies.
+# Pinned to the versions verified on Windows 11 / Python 3.14 (Phase 0 baseline, 2026-09-27).
 fastapi==0.110.1
+starlette==0.37.2        # required range for fastapi 0.110.x
 uvicorn==0.29.0
-llama-cpp-python==0.2.60
-sqlalchemy
-pyttsx3==2.90
-psutil==5.9.8
+websockets==17.1         # WebSocket transport used by uvicorn
+httpx==0.28.1            # outbound HTTP (app/core/network_utils.py)
+SQLAlchemy==2.0.52
+pydantic==2.13.5
 pydantic-settings==2.2.1
-duckduckgo-search==5.3.0
-websockets==12.0
+psutil==5.9.8
+Pillow==12.3.0
+pyttsx3==2.90
+
+# Local inference.
+# CPU engine: this binding build is CPU-only on Python 3.14 (llama_supports_gpu_offload() == False).
+llama-cpp-python==0.2.60
+# GPU engine (app/core/llama_sidecar.py): llama.cpp's CUDA build in backend/llama-bin.zip
+# (hash-pinned in backend/llama-bin.sha256.json) loads the CUDA 12 runtime from these packages.
+nvidia-cuda-runtime-cu12==12.9.79
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cuda-nvrtc-cu12==12.9.86
+nvidia-ml-py==13.615.71     # GPU stats via NVML (no nvidia-smi process per poll)
+cryptography==50.0.1        # AES-GCM + Argon2id for the owner unlock (no network use)
+sqlcipher3-wheels==0.5.7    # SQLCipher: encrypted SQLite database (import name: sqlcipher3)
