@@ -6,7 +6,7 @@ Live status of the work. Claude updates it as each step finishes.
 - Plan and decisions: `docs/ROADMAP.md`
 - What changed, in plain words: `CHANGELOG.md`
 
-_Last updated: 2026-10-03. Verification checkpoint: `docs/tasks/T-02-verification.md`._
+_Last updated: 2026-10-10. Verification checkpoint: `docs/tasks/T-02-verification.md`._
 
 ## Needs you (owner)
 | # | What | Why | Status |
@@ -37,17 +37,22 @@ _Last updated: 2026-10-03. Verification checkpoint: `docs/tasks/T-02-verificatio
 ## Later phases
 | Phase | Scope | Status |
 |---|---|---|
-| 1b | GPU sidecar (D1): local implementation verified | ✅ 324 tests, 13 memory checks, frontend build and real 7B GPU chat passed 2026-10-03; changes remain uncommitted |
+| 1b | GPU sidecar (D1): local implementation verified | ✅ 324 tests, 13 memory checks, frontend build and real 7B GPU chat passed 2026-10-03; committed 2026-10-10 (0173f2a) |
 | 2 | Voice & identity | 🔄 Local dictation implemented; real runtime blocked by Windows Application Control (PyAV). See `docs/VOICE.md`. Wake word, voice ID and Hello remain pending. |
 | 3 | Smarter brain: planner, tool calling, prompt-injection defense, file search | 💤 |
 | 4 | System control & automation (undo, scheduler, emergency stop) | 💤 |
 | 5 | Skills, each in its own process | 💤 |
 | 6 | Integrations & privacy dashboard | 💤 |
 | 7 | Hardening & installer | 💤 |
+| 8 | System Watch (T-06): local change alerts, defensive only | ✅ first version 2026-10-10 |
+| 9 | Portfolio Advisor (T-07): advice only, no trading | ✅ first version 2026-10-10 |
 
 ## Done
 | Date | What |
 |---|---|
+| 2026-10-10 | Portfolio Advisor (advice only, no trading) — 5892edc |
+| 2026-10-10 | Voice choice (male/female) + speech speed — 6d29f62 |
+| 2026-10-10 | Audit findings F01–F23 fixed, System Watch (T-06), project tidy — 0173f2a |
 | 2026-09-27 | Phase 1 security foundation: egress guard, PIN unlock, encrypted DB, secrets vault, redaction, retention; independent review fixed |
 | 2026-09-27 | Phase 1 plan approved (decisions D1–D5) |
 | 2026-09-27 | Phase 0 stabilize: 158 tests, chat smoke test and Electron start green on Windows |

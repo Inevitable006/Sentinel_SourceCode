@@ -7,6 +7,41 @@ Newest first. Each entry says what changed, why it matters and how to check it.
 
 ---
 
+## 2026-10-10 · Portfolio Advisor (advice only)
+**Branch:** `phase1/security` · commit 5892edc
+
+- **What changed:** a new **Portfolio** screen. Import holdings from a Zerodha, Groww or CAMS-style CSV export, or type them in.
+- **What it does:** a fixed calculator (no AI guessing) shows value, gain, allocation and SIP/lump-sum ranges. Rule-based suggestions come with the reason and steps you can carry out yourself.
+- **Prices:** mutual-fund NAVs (AMFI) and NSE prices are fetched only when you ask, through the internet gate.
+- **What it never does:** log in to a broker or bank, or trade. A read-only chat skill can answer questions about the portfolio.
+- **How to check:** open Portfolio in the sidebar and import a CSV. Tests: `tests/integration/test_portfolio.py`.
+
+---
+
+## 2026-10-10 · Choose a male or female voice, and speech speed
+**Branch:** `phase1/security` · commit 6d29f62
+
+- **Settings → Voice** lists the voices installed in Windows with their gender. It also has a speed slider and a preview button.
+- The choice is checked against the installed voices and saved in `voice.json`. If voices can't be listed, Sentinel keeps speaking with the default voice.
+- Tests: `tests/core/test_voice_choice.py`.
+
+---
+
+## 2026-10-10 · Audit fixes F01–F23, System Watch, project tidy-up
+**Branch:** `phase1/security` · commit 0173f2a
+
+All 23 findings of the project analysis report (`output/pdf`) are fixed:
+- **Honest results:** a failed tool now reports a failure instead of "success". Speech readiness, safe mode (the F17 crash-recovery bug) and model status labels show the real state.
+- **Screens that work:** Workspace, Memory and Security screens are connected to real endpoints. Chats resume after reconnecting, and interrupted plans recover.
+- **Safer requests:** single-use approval tokens, cancelling a request stops its own work, and DNS pinning plus download size caps on web requests.
+- **Skills:** each skill's fingerprint is checked, Python runs in a contained runner, and one central switch turns each skill on or off.
+- **Locking:** a Windows lock or sleep locks Sentinel and stops speech.
+- **Also:** image attach in chat, prompt templates for each model, a tamper-evident audit log (each entry is chained to the previous one), portable runtime packaging, and unused dependencies and stale files removed. Old build files were moved to `_to_delete/2026-10-10`.
+- **System Watch (new):** spots local changes on the PC and explains them in plain words.
+- **Map of the code:** `docs/STRUCTURE.md`.
+
+---
+
 ## 2026-09-27 · Steps 1.5 + 1.6: secrets vault, log masking, real deletion, retention
 **Branch:** `phase1/security`
 
