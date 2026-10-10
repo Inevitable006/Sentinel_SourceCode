@@ -147,10 +147,13 @@ class LocalVisionAdapter(VisionModelAdapter):
                 if not self._verify_files():
                     return {"ok": False, "error": "VISION_MODEL_LOAD_FAILED", "content": None}
                 try:
-                    chat_handler = Llava15ChatHandler(clip_model_path=self.proj_path)
+                    # llama-cpp-python 0.2.x needs logits_all=True for LLaVA, and a quiet CLIP
+                    # handler (its stdout suppression fails when stdout is redirected).
+                    chat_handler = Llava15ChatHandler(clip_model_path=self.proj_path, verbose=False)
                     self._llama = Llama(
                         model_path=self.model_path,
                         chat_handler=chat_handler,
+                        logits_all=True,
                         n_ctx=2048, # Enough for image + text prompt
                         n_gpu_layers=0, # Default to CPU unless configured otherwise (in B5)
                         verbose=False
