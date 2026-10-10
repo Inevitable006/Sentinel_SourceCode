@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './SettingsPanel.css';
 import VoiceSettings from './VoiceSettings';
+import BackupSettings from './BackupSettings';
 import { apiGet, apiPost, ApiError, timeAgo, type EgressEvent, type EgressStatus, type ModelsInfo, type UnlockStatus } from '../../lib/backend';
 
 interface ModelProfile {
@@ -305,6 +306,7 @@ const SettingsPanel: React.FC = () => {
     <div className="settings-container glass-panel">
       <h2>Sentinel Configuration</h2>
       <VoiceSettings />
+      <BackupSettings />
       
       <div className="settings-section">
         <h3>Model Selection</h3>

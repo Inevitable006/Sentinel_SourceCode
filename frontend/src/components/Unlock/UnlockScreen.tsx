@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Lock, KeyRound, ShieldCheck, Copy, Check } from 'lucide-react';
 import { apiPost, ApiError, type UnlockStatus } from '../../lib/backend';
+import RestorePanel from './RestorePanel';
 
 type Migration = {
   migrated?: boolean;
@@ -153,6 +154,7 @@ const UnlockScreen: React.FC<Props> = ({ status, onChanged, setHoldOpen }) => {
           <p>Your encrypted data is still here, but the file that holds its locked keys is gone.</p>
           <p>Restore <code>keystore.json</code> or <code>keystore.backup.json</code> into <code>%APPDATA%\sentinel</code> from a backup, then restart Sentinel. Your PIN or recovery key will work again.</p>
           <p className="unlock-muted">Sentinel won't start a new setup here, because a new setup could never open your existing data.</p>
+          <RestorePanel onDone={onChanged} />
         </div>
       </div>
     );
@@ -184,6 +186,7 @@ const UnlockScreen: React.FC<Props> = ({ status, onChanged, setHoldOpen }) => {
             {busy ? 'Encrypting…' : 'Encrypt my data'}
           </button>
           <p className="unlock-muted">Nobody, including Anthropic or Google, can reset this PIN. You'll get a recovery key next.</p>
+          <RestorePanel onDone={onChanged} />
         </form>
       </div>
     );
@@ -228,6 +231,7 @@ const UnlockScreen: React.FC<Props> = ({ status, onChanged, setHoldOpen }) => {
           </button>
         </form>
       )}
+      <RestorePanel onDone={onChanged} />
     </div>
   );
 };
