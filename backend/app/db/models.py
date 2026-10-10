@@ -96,6 +96,21 @@ class Holding(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class FileAction(Base):
+    """A file change Sentinel made with approval, and how to undo it while the window is open."""
+    __tablename__ = "file_actions"
+    id = Column(String, primary_key=True)
+    op = Column(String, nullable=False)             # write | move | delete | mkdir
+    path = Column(Text, nullable=False)             # relative to the approved folder
+    dest = Column(Text, nullable=True)              # for move
+    snapshot = Column(Text, nullable=True)          # undo copy (file name in the undo store), if any
+    existed = Column(Integer, default=0)            # did the target exist before (write)?
+    summary = Column(Text, default="")
+    created = Column(Float, nullable=False)         # epoch seconds
+    undo_until = Column(Float, nullable=False)
+    status = Column(String, default="done")         # done | undone | final
+
+
 class PortfolioHistory(Base):
     """Portfolio Advisor: total value once per day (recorded when prices are refreshed)."""
     __tablename__ = "portfolio_history"

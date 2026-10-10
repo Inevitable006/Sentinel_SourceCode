@@ -217,7 +217,14 @@ def create_workspace_router(verify_session_token, require_pin):
                 raise HTTPException(403, reason)
             tier = int(tool_registry.get_tool(step["tool"]).tool_schema.risk_tier)
             token = token_service.generate_token(item.id, step["tool"], step["args"], tier)
-            return {"step": step, "risk": tier, "token": token, "revision": data["revision"]}
+            details = None
+            hook = tool_registry.preview_hooks.get(step["tool"])
+            if hook:
+                try:
+                    details = hook(step["args"], token)
+                except Exception as e:
+                    raise HTTPException(409, f"Cannot do this step: {e}")
+            return {"step": step, "risk": tier, "token": token, "revision": data["revision"], "details": details}
 
     @router.post("/plans/{item_id}/run")
     async def run(item_id: str, body: ConfirmBody):

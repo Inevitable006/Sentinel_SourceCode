@@ -52,6 +52,15 @@ class SecureRunner:
                 # Generate token and return pause
                 tool_def = tool_registry.get_tool(tool_name)
                 req_token = token_service.generate_token(session_id, tool_name, args, tool_def.tool_schema.risk_tier.value)
+                details = None
+                hook = tool_registry.preview_hooks.get(tool_name)
+                if hook:
+                    # The preview shows exactly what will change; if it can't be previewed, it can't run.
+                    try:
+                        details = hook(args, req_token)
+                    except Exception as e:
+                        token_service.validate_token(req_token, session_id, tool_name, args)   # consume it
+                        return {"status": "error", "message": f"Cannot do this: {e}"}
                 audit_logger.log_event("confirmation_requested", {"tool_name": tool_name, "args": args, "session_id": session_id})
                 def get_risk_explanation(tier):
                     if tier == 1: return "Safe, read-only diagnostic action. No data modification."
@@ -72,8 +81,9 @@ class SecureRunner:
                         "risk": tool_def.tool_schema.risk_tier.name,
                         "risk_explanation": get_risk_explanation(tool_def.tool_schema.risk_tier.value),
                         "expected_effect": "Executes the specified action on the local system.",
-                        "is_reversible": tool_def.tool_schema.risk_tier.value <= 2,
-                        "args": args
+                        "is_reversible": tool_def.tool_schema.risk_tier.value <= 2 or bool(details),
+                        "args": args,
+                        "details": details,
                     }
                 }
             
@@ -106,11 +116,14 @@ class SecureRunner:
             # The egress guard lets a tool reach the internet only if it declared network_access.
             network_ok = "network_access" in (tool_def.tool_schema.required_capabilities or [])
             from app.core.safe_process import current_job
+            from app.core.file_ops import current_approval
             job_token = current_job.set(request_id or session_id)
+            approval_ctx = current_approval.set(token)      # lets previewed actions check for conflicts
             try:
                 with tool_context(tool_name, network_ok):
                     result = tool_def.executor(**exec_args)
             finally:
+                current_approval.reset(approval_ctx)
                 current_job.reset(job_token)
             duration = time.time() - start_time
 

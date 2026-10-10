@@ -37,6 +37,8 @@ class ToolDefinition(BaseModel):
 class ToolRegistry:
     def __init__(self):
         self.tools: Dict[str, ToolDefinition] = {}
+        # tool name -> fn(args, approval_token) -> dict shown on the approval card (may raise to refuse)
+        self.preview_hooks: Dict[str, Callable] = {}
         
     def register(self, tool_def: ToolDefinition):
         self.tools[tool_def.tool_schema.name] = tool_def

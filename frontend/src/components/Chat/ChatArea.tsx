@@ -14,7 +14,8 @@ interface Message {
 interface Confirmation {
   token: string;
   session_id: string;
-  action_preview: { tool: string; purpose: string; risk: string; args: Record<string, unknown> };
+  action_preview: { tool: string; purpose: string; risk: string; args: Record<string, unknown>;
+    details?: { summary: string; new_content_start?: string; undo?: string } | null };
 }
 
 // Shows ``` fenced blocks as code; everything else stays plain text (React escapes it, no HTML is injected).
@@ -404,6 +405,13 @@ const ChatArea: React.FC<{ resumeRequest?: { threadId: string; nonce: number } |
           <div role="group" aria-label="Action approval">
             <p>{confirmation.action_preview.purpose}</p>
             <p>Risk: {confirmation.action_preview.risk}</p>
+            {confirmation.action_preview.details && (
+              <div className="approval-preview">
+                <strong>{confirmation.action_preview.details.summary}</strong>
+                {confirmation.action_preview.details.new_content_start && <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{confirmation.action_preview.details.new_content_start}</pre>}
+                {confirmation.action_preview.details.undo && <p>{confirmation.action_preview.details.undo}</p>}
+              </div>
+            )}
             <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{JSON.stringify(confirmation.action_preview.args, null, 2)}</pre>
             {pinNeeded && (
               <label htmlFor="approval-pin" style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: '6px 0' }}>

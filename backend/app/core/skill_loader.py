@@ -241,6 +241,40 @@ def register_all_skills():
         "skill_project_investment": "project_investment",
     })
 
+    # ── File Manager (approved folder only; preview, conflict check, 5-minute undo) ──
+    skill_router.register_skill(SkillManifest(
+        name="file_manager",
+        version="1.0.0",
+        description="Creates, edits, moves and deletes files inside the Sentinel Workspace folder, with preview and 5-minute undo.",
+        risk_tier=RiskTier.TIER_3,
+        required_capabilities=[],
+        tools=[
+            SkillToolSchema(name="skill_write_file", description="Create or overwrite a text file in the Sentinel Workspace folder (path relative to it).",
+                            parameters={"path": {"type": "string"}, "content": {"type": "string"}}, required_capabilities=[]),
+            SkillToolSchema(name="skill_move_file", description="Move or rename a file/folder inside the Sentinel Workspace folder.",
+                            parameters={"src": {"type": "string"}, "dest": {"type": "string"}}, required_capabilities=[]),
+            SkillToolSchema(name="skill_delete_file", description="Delete a file/folder in the Sentinel Workspace folder (undo possible for 5 minutes).",
+                            parameters={"path": {"type": "string"}}, required_capabilities=[]),
+            SkillToolSchema(name="skill_make_folder", description="Create a folder inside the Sentinel Workspace folder.",
+                            parameters={"path": {"type": "string"}}, required_capabilities=[]),
+            SkillToolSchema(name="skill_undo_file_action", description="Undo a recent file action by its action id (within 5 minutes).",
+                            parameters={"action_id": {"type": "string"}}, required_capabilities=[]),
+        ],
+        entry_point="skills.file_manager",
+        lazy_load=True,
+        gpu_policy=GpuPolicy.FORBIDDEN,
+        requires_confirmation=True,
+    ))
+    _register_function_aliases("file_manager", {
+        "skill_write_file": "write_file", "skill_move_file": "move_file", "skill_delete_file": "delete_file",
+        "skill_make_folder": "make_folder", "skill_undo_file_action": "undo_file_action",
+    })
+    from app.core import file_ops as _file_ops
+    from app.core.tool_registry import tool_registry as _registry
+    for _tool, _op in (("skill_write_file", "write"), ("skill_move_file", "move"),
+                       ("skill_delete_file", "delete"), ("skill_make_folder", "mkdir")):
+        _registry.preview_hooks[_tool] = (lambda op: lambda args, token: _file_ops.preview(op, args, token))(_op)
+
     # ── Finance Analysis ─────────────────────────────────────
     skill_router.register_skill(SkillManifest(
         name="finance_analysis",

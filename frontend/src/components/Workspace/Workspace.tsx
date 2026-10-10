@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost } from '../../lib/backend';
 import { usePinAction } from './usePinAction';
+import FileActions from './FileActions';
 import './Workspace.css';
 
 type Kind = 'task' | 'plan' | 'email_draft' | 'calendar_draft' | 'document';
@@ -139,6 +140,7 @@ const PlanRunner: React.FC<{ item: Item; onDone: () => void; setMessage: (m: str
 
 const Workspace: React.FC = () => {
   const [kind, setKind] = useState<Kind>('task');
+  const [showFiles, setShowFiles] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
   const [editing, setEditing] = useState<Item | 'new' | null>(null);
@@ -167,9 +169,11 @@ const Workspace: React.FC = () => {
     <div className="ws-container glass-panel">
       <div className="ws-tabs" role="tablist">
         {(Object.keys(LABELS) as Kind[]).map(k => (
-          <button key={k} role="tab" aria-selected={k === kind} className={k === kind ? 'active' : ''} onClick={() => setKind(k)}>{LABELS[k]}</button>
+          <button key={k} role="tab" aria-selected={!showFiles && k === kind} className={!showFiles && k === kind ? 'active' : ''} onClick={() => { setShowFiles(false); setKind(k); }}>{LABELS[k]}</button>
         ))}
+        <button role="tab" aria-selected={showFiles} className={showFiles ? 'active' : ''} onClick={() => setShowFiles(true)}>File actions</button>
       </div>
+      {showFiles ? <FileActions /> : <>
       <div role="status" aria-live="polite" className="ws-message">{message}</div>
       {kind.endsWith('_draft') && <p className="ws-muted">Drafts stay on this PC. Sentinel never sends email or creates calendar events.</p>}
       {prompt}
@@ -206,6 +210,7 @@ const Workspace: React.FC = () => {
           </ul>
         </>
       )}
+      </>}
     </div>
   );
 };

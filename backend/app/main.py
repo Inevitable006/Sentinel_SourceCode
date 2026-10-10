@@ -120,6 +120,12 @@ async def _auto_lock_loop():
                 await asyncio.to_thread(recover_interrupted)
             except Exception as e:
                 print(f"[Workspace] reminder check failed: {type(e).__name__}")
+            # Close expired file-undo windows (erases undo copies and held deleted files).
+            try:
+                from app.core.file_ops import finalize_expired
+                await asyncio.to_thread(finalize_expired)
+            except Exception as e:
+                print(f"[Files] finalize failed: {type(e).__name__}")
             # System Watch every 15 minutes, never while the PC is under heavy load.
             try:
                 from app.core.system_watch import system_watch
@@ -446,6 +452,8 @@ from app.backup_routes import create_backup_router
 app.include_router(create_backup_router(verify_session_token, _require_fresh_pin))
 from app.briefing import create_briefing_router
 app.include_router(create_briefing_router(verify_session_token))
+from app.files_routes import create_files_router
+app.include_router(create_files_router(verify_session_token, _require_fresh_pin))
 
 
 @app.get("/api/unlock/status")
