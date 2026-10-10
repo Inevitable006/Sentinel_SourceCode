@@ -1,0 +1,11 @@
+{
+  "repository": "mys/ggml_llava-v1.5-7b",
+  "revision": "9b713a64048c7f982ec3969e60e9f61f7a2730c2",
+  "folder": "llava",
+  "model": "ggml-model-q4_k.gguf",
+  "projector": "mmproj-model-f16.gguf",
+  "files": {
+    "ggml-model-q4_k.gguf": "7ac9c2f7b8d76cc7f3118cdf0953ebab7a7a9b12bad5dbe237219d2ab61765ea",
+    "mmproj-model-f16.gguf": "b7c8ff0f58fca47d28ba92c4443adf8653f3349282cb8d9e6911f22d9b3814fe"
+  }
+}

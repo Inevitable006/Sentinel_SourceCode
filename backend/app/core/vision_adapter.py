@@ -21,6 +21,18 @@ except (ImportError, RuntimeError):
     Llama = None
     Llava15ChatHandler = None
 
+def _pinned_vision_files() -> Dict[str, Any]:
+    import json
+    from pathlib import Path
+    try:
+        from app.core.paths import MODELS_DIR
+        spec = json.loads((Path(__file__).resolve().parents[2] / "vision-model.json").read_text(encoding="utf-8"))
+        folder = MODELS_DIR / spec["folder"]
+        return {"model": str(folder / spec["model"]), "projector": str(folder / spec["projector"]), "hashes": spec["files"]}
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
 class VisionModelAdapter(ABC):
     """
     Abstract interface for vision model adapters.
@@ -46,11 +58,34 @@ class LocalVisionAdapter(VisionModelAdapter):
     Uses llama-cpp-python with a LLaVA-1.5 compatible GGUF and mmproj.
     """
     def __init__(self, model_path: str = None, proj_path: str = None):
-        # Allow override via args, but default to environment variables
-        self.model_path = model_path or os.environ.get("SENTINEL_VISION_MODEL_PATH")
-        self.proj_path = proj_path or os.environ.get("SENTINEL_VISION_PROJ_PATH")
+        # Arguments, then environment variables, then the pinned install location
+        # (%APPDATA%\sentinel\models\llava, described by backend/vision-model.json).
+        pinned = _pinned_vision_files()
+        self.model_path = model_path or os.environ.get("SENTINEL_VISION_MODEL_PATH") or pinned.get("model")
+        self.proj_path = proj_path or os.environ.get("SENTINEL_VISION_PROJ_PATH") or pinned.get("projector")
+        self._expected = pinned.get("hashes", {}) if not (model_path or os.environ.get("SENTINEL_VISION_MODEL_PATH")) else {}
+        self._verified = False
         self.lock = threading.Lock()
         self._llama = None
+
+    def _verify_files(self) -> bool:
+        """Checks the pinned SHA-256 of the model files once, before the first load."""
+        if self._verified or not self._expected:
+            return True
+        import hashlib
+        for path in (self.model_path, self.proj_path):
+            expected = self._expected.get(os.path.basename(path))
+            if not expected:
+                return False
+            digest = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != expected:
+                logger.error("Vision model file failed its integrity check: %s", os.path.basename(path))
+                return False
+        self._verified = True
+        return True
 
     def is_available(self) -> bool:
         """
@@ -109,6 +144,8 @@ class LocalVisionAdapter(VisionModelAdapter):
         try:
             # Lazy load the model
             if self._llama is None:
+                if not self._verify_files():
+                    return {"ok": False, "error": "VISION_MODEL_LOAD_FAILED", "content": None}
                 try:
                     chat_handler = Llava15ChatHandler(clip_model_path=self.proj_path)
                     self._llama = Llama(

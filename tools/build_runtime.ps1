@@ -8,10 +8,14 @@
 # 3. Run:
 #      powershell -ExecutionPolicy Bypass -File tools\build_runtime.ps1 -EmbedZip <path-to-zip> -Sha256 <hash>
 # 4. Then build the installer:  npm run dist
+#    Or skip step 2 and use -FromVenv: copies the packages already installed and tested in
+#    backend\.venv (same Python version, same machine type). Needed for llama-cpp-python,
+#    which has no ready-made package on PyPI and was compiled locally.
 param(
   [Parameter(Mandatory = $true)][string]$EmbedZip,
   [Parameter(Mandatory = $true)][string]$Sha256,
-  [string]$Wheelhouse = ""
+  [string]$Wheelhouse = "",
+  [switch]$FromVenv
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -21,7 +25,7 @@ $devPython = Join-Path $root "backend\.venv\Scripts\python.exe"
 
 $actual = (Get-FileHash -Algorithm SHA256 $EmbedZip).Hash.ToLower()
 if ($actual -ne $Sha256.ToLower()) { throw "Embeddable zip SHA-256 mismatch: expected $Sha256, got $actual" }
-if (-not (Test-Path $Wheelhouse)) { throw "Wheel folder not found: $Wheelhouse (see step 2 above)" }
+if (-not $FromVenv -and -not (Test-Path $Wheelhouse)) { throw "Wheel folder not found: $Wheelhouse (see step 2 above, or use -FromVenv)" }
 
 $devVersion = (& $devPython -c "import sys;print('%d%d' % sys.version_info[:2])").Trim()
 if (Test-Path $out) { Remove-Item -Recurse -Force $out }
@@ -34,9 +38,21 @@ if ($pth.Name -ne "python$devVersion._pth") { throw "Version mismatch: runtime $
 # Module search path of the installed app: standard library, its packages, and the backend.
 @("python$devVersion.zip", ".", "Lib\site-packages", "..\backend") | Set-Content -Encoding ascii $pth.FullName
 
-& $devPython -m pip install --disable-pip-version-check --no-index --find-links $Wheelhouse `
-  --target (Join-Path $out "Lib\site-packages") -r (Join-Path $root "backend\requirements.txt")
-if ($LASTEXITCODE -ne 0) { throw "pip install into the runtime failed" }
+$sitePackages = Join-Path $out "Lib\site-packages"
+if ($FromVenv) {
+  # Copy the tested packages, leaving out tools only needed for development.
+  $venvSite = Join-Path $root "backend\.venv\Lib\site-packages"
+  $skip = '^(pip|setuptools|wheel|_pytest|pytest|pluggy|iniconfig|py)(-|\.|$)|__pycache__|\.dist-info\\RECORD$'
+  New-Item -ItemType Directory -Force $sitePackages | Out-Null
+  Get-ChildItem $venvSite | Where-Object { $_.Name -notmatch '^(pip|setuptools|wheel|_pytest|pytest|pluggy|iniconfig|__pycache__|_distutils_hack|distutils-precedence\.pth)' } | ForEach-Object {
+    Copy-Item -Recurse -Force $_.FullName (Join-Path $sitePackages $_.Name)
+  }
+  Get-ChildItem -Recurse -Directory -Force $sitePackages -Filter __pycache__ | Remove-Item -Recurse -Force
+} else {
+  & $devPython -m pip install --disable-pip-version-check --no-index --find-links $Wheelhouse `
+    --target $sitePackages -r (Join-Path $root "backend\requirements.txt")
+  if ($LASTEXITCODE -ne 0) { throw "pip install into the runtime failed" }
+}
 
 # Smoke: the runtime can import the backend without the developer venv.
 Push-Location (Join-Path $root "backend")
