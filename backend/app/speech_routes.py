@@ -1,6 +1,7 @@
 """Authenticated dictation endpoints; transcripts are drafts, never executed commands."""
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from app.core.speech_input import MAX_AUDIO_BYTES, SpeechError, speech_input
 from app.core.vault import vault
 from app.core.resource_governor import resource_governor, SystemState
@@ -45,4 +46,33 @@ def create_speech_router(verify_session_token):
             raise HTTPException(423, "Dictation was interrupted. Please try again.")
         return result
 
+    # ── Spoken replies: choose a male or female voice and the speed ──
+    @router.get("/voices")
+    async def voices():
+        require_ready()
+        from app.core.voice_service import voice_service
+        return await asyncio.to_thread(voice_service.settings)
+
+    @router.post("/voices")
+    async def choose_voice(body: VoiceChoice):
+        require_ready()
+        from app.core.voice_service import voice_service
+        try:
+            return await asyncio.to_thread(voice_service.set_voice, body.voice_id, body.rate)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.post("/voices/preview")
+    def preview():
+        require_ready()
+        from app.core.voice_service import voice_service
+        voice_service.stop("preview")
+        voice_service.speak("Hello, I am Sentinel. This is how I will sound.")
+        return {"speaking": True}
+
     return router
+
+
+class VoiceChoice(BaseModel):
+    voice_id: str | None = None
+    rate: int | None = None

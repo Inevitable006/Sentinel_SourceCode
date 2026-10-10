@@ -14,7 +14,7 @@ The single authoritative list. "Works" means exercised by automated tests on thi
 | Document reading | Works | Text files in the project or Sentinel data folder only. |
 | Image analysis | Needs model files | Attach → validated → analyzed in memory. Without local LLaVA files the chat says the image could not be analyzed. |
 | Dictation | Needs model file | Shows unavailable until the Whisper model loads; vocabulary file missing (docs/VOICE.md). |
-| Speech output | Works, not heard in tests | Stops on lock, emergency stop and Voice off. |
+| Speech output | Works, not heard in tests | Choose a male or female Windows voice (David / Zira on this PC) and speed in Settings → Voice, with Preview; saved for next time. Stops on lock, emergency stop and Voice off. |
 | System Watch | Works | Every 15 min + Check now: startup items, scheduled tasks, services, admin accounts, firewall, Defender and threats, programs running from Downloads/Temp, Sentinel's own files. Alerts with steps; only automatic reaction is Offline mode on a critical alert. Not an antivirus. |
 | Lock | Works | Manual, idle timeout, Windows lock and sleep (Electron powerMonitor; manual check recommended). UI hides data when lock state cannot be confirmed. |
 | Skill integrity | Works | Pinned SHA-256 per built-in skill checked at registration and load; development mode only with SENTINEL_SKILL_DEV=1. Re-pin with `tools/pin_skills.py`. |
