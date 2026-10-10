@@ -55,6 +55,11 @@ class MemoryBody(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
+class LimitBody(BaseModel):
+    limit_per_hour: int = Field(ge=0, le=1000)   # 0 = unlimited
+    pin: str | None = None
+
+
 class SkillBody(BaseModel):
     enabled: bool
     pin: str | None = None
@@ -84,6 +89,26 @@ def skill_enabled(name):
             return setting is None or setting.status != "disabled"
     except Exception:
         return False
+
+
+DEFAULT_LIMITS = {"web_research": 20, "finance_analysis": 30, "python_coding": 20, "file_manager": 30,
+                  "system_ops": 30, "app_control": 10}   # runs per hour; 0 = unlimited
+
+
+def skill_limit(name) -> int:
+    """Runs per hour allowed for a skill (owner setting, else the default). 0 means unlimited."""
+    from app.db import database as db_store
+    default = DEFAULT_LIMITS.get(name, 0)
+    if not db_store.is_open():
+        return default
+    try:
+        with SessionLocal() as db:
+            setting = db.get(WorkItem, "skill:" + name)
+            payload = json.loads(setting.payload or "{}") if setting else {}
+            value = payload.get("limit_per_hour", default)
+            return int(value) if value is not None else default
+    except Exception:
+        return default
 
 
 def recover_interrupted():
@@ -315,8 +340,10 @@ def create_workspace_router(verify_session_token, require_pin):
     @router.get("/skills")
     def skills():
         from app.core.skill_router import skill_router
+        from app.core.rate_limits import skill_rate
         return [{"name": name, "description": record.manifest.description,
                  "enabled": skill_enabled(name), "execution": "in-process",
+                 "limit_per_hour": skill_limit(name), "used_last_hour": skill_rate.used(name),
                  "capabilities": [c.value for c in record.manifest.required_capabilities]}
                 for name, record in skill_router._skills.items()]
 
@@ -333,6 +360,22 @@ def create_workspace_router(verify_session_token, require_pin):
                 db.add(item)
             item.status = "enabled" if body.enabled else "disabled"; db.commit()
         return {"enabled": body.enabled}
+
+    @router.post("/skills/{name}/limit")
+    def set_skill_limit(name: str, body: LimitBody):
+        from app.core.skill_router import skill_router
+        if name not in skill_router._skills:
+            raise HTTPException(404, "Skill not found.")
+        require_pin(body.pin, "Enter your PIN to change skill limits.")
+        with SessionLocal() as db:
+            item = db.get(WorkItem, "skill:" + name)
+            if item is None:
+                item = WorkItem(id="skill:" + name, kind="skill_setting", title=name, payload="{}", status="enabled")
+                db.add(item)
+            payload = json.loads(item.payload or "{}")
+            payload["limit_per_hour"] = body.limit_per_hour
+            item.payload = json.dumps(payload); db.commit()
+        return {"limit_per_hour": body.limit_per_hour}
 
     @router.get("/privacy")
     def privacy():

@@ -29,6 +29,17 @@ def skill_for_tool(tool_name: str):
 
 
 class SecureRunner:
+    @staticmethod
+    def _over_limit(skill: str):
+        from app.core.rate_limits import skill_rate
+        from app.workspace_routes import skill_limit
+        limit = skill_limit(skill)
+        wait = skill_rate.check(skill, limit)
+        if wait is None:
+            return None
+        return (f"The '{skill}' skill reached its limit of {limit} actions per hour. "
+                f"Try again in about {max(1, wait // 60)} minute(s), or raise the limit in Security → Skills.")
+
     def execute(self, tool_name: str, args: dict, session_id: str, request_id: str = None, token: str = None, force_confirmation: bool = False) -> Dict[str, Any]:
         """Executes a tool with strict policy enforcement."""
         
@@ -39,6 +50,10 @@ class SecureRunner:
             if not skill_enabled(owner_skill):
                 audit_logger.log_event("execution_denied_skill_disabled", {"tool_name": tool_name, "skill": owner_skill, "session_id": session_id})
                 return {"status": "error", "message": f"The '{owner_skill}' skill is turned off in Skills settings."}
+            limited = self._over_limit(owner_skill)
+            if limited:
+                audit_logger.log_event("execution_denied_rate_limit", {"tool_name": tool_name, "skill": owner_skill, "session_id": session_id})
+                return {"status": "error", "message": limited}
 
         # 1. Policy Evaluation
         decision, reason = policy_engine.evaluate(tool_name, args, session_id)
@@ -101,6 +116,15 @@ class SecureRunner:
         if resource_governor.state in [SystemState.EMERGENCY, SystemState.USER_PAUSED]:
             return {"status": "error", "message": f"Execution aborted. System is in {resource_governor.state.value} state."}
             
+        # The hourly limit is counted when an action really starts (re-checked: approvals may have piled up).
+        if owner_skill:
+            limited = self._over_limit(owner_skill)
+            if limited:
+                audit_logger.log_event("execution_denied_rate_limit", {"tool_name": tool_name, "skill": owner_skill, "session_id": session_id})
+                return {"status": "error", "message": limited}
+            from app.core.rate_limits import skill_rate
+            skill_rate.record(owner_skill)
+
         try:
             audit_logger.log_event("execution_started", {"tool_name": tool_name, "session_id": session_id})
             

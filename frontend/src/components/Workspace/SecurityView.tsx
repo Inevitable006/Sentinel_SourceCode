@@ -5,7 +5,8 @@ import SystemWatchPanel from './SystemWatchPanel';
 import ActivityPanel from './ActivityPanel';
 import './Workspace.css';
 
-type Skill = { name: string; description: string; enabled: boolean; execution: string; capabilities: string[] };
+type Skill = { name: string; description: string; enabled: boolean; execution: string; capabilities: string[];
+  limit_per_hour: number; used_last_hour: number };
 type Privacy = {
   counts: Record<string, number>; storage: string; audio: string; integrations: string;
   network: { offline: boolean; allowed_total: number; blocked_total: number };
@@ -58,6 +59,15 @@ const SecurityView: React.FC = () => {
               })}>{s.enabled ? 'Turn off' : 'Turn on'}</button>
             </div>
             <p className="ws-muted">{s.description} {s.capabilities.length ? `Needs: ${s.capabilities.join(', ')}.` : ''}</p>
+            <div className="ws-row">
+              <span className="ws-muted">Used {s.used_last_hour} {s.limit_per_hour ? `of ${s.limit_per_hour}` : '(no limit)'} in the last hour.</span>
+              <label>Limit per hour (0 = none)
+                <input type="number" min={0} max={1000} defaultValue={s.limit_per_hour}
+                       onBlur={e => { const v = Number(e.target.value); if (v !== s.limit_per_hour) run(async (pin?: string) => {
+                         await apiPost(`/api/workspace/skills/${s.name}/limit`, { limit_per_hour: v, pin }); setMessage(`Limit for ${s.name} set to ${v || 'none'}.`); load();
+                       }); }} />
+              </label>
+            </div>
           </li>
         ))}
       </ul>

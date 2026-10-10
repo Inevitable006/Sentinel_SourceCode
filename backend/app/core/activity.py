@@ -89,6 +89,13 @@ def build_activity(days: float = 7, now: Optional[float] = None, entries: Option
         elif kind == "execution_denied_skill_disabled":
             items.append({"time": ts, "action": _label(tool), "tool": tool, "from": origin(session), "approval": "—",
                           "status": "blocked", "outcome": f"blocked: the {d.get('skill')} skill is turned off"})
+        elif kind == "execution_denied_rate_limit":
+            entry = pending.pop(key, None)
+            item = {"time": ts, "action": _label(tool), "tool": tool, "from": origin(session), "approval": "—",
+                    "status": "blocked", "outcome": f"blocked: the {d.get('skill')} skill reached its hourly limit"}
+            if entry is not None and entry in items:
+                items.remove(entry)
+            items.append(item)
         elif kind == "token_validation_failed":
             entry = pending.pop(key, None) or {"time": ts, "action": _label(tool), "tool": tool, "from": origin(session)}
             if entry not in items:

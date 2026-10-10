@@ -124,3 +124,11 @@ def reopen_db():
     yield
     if not is_open():
         open_database(_TEST_DB_KEY)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_skill_rate_limits():
+    """Hourly skill counters are process-wide; each test starts with none used."""
+    from app.core.rate_limits import skill_rate
+    skill_rate._runs.clear()
+    yield
