@@ -8,9 +8,10 @@ import Workspace from '../Workspace/Workspace';
 import MemoryView from '../Workspace/MemoryView';
 import SecurityView from '../Workspace/SecurityView';
 import Portfolio from '../Portfolio/Portfolio';
+import Briefing from '../Briefing/Briefing';
 
 const Layout: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('console');
+  const [activeTab, setActiveTab] = useState('today');
   const [resumeRequest, setResumeRequest] = useState<{ threadId: string; nonce: number } | null>(null);
 
   return (
@@ -25,6 +26,7 @@ const Layout: React.FC = () => {
         {activeTab === 'memory' && (
           <MemoryView onResume={(threadId) => { setResumeRequest({ threadId, nonce: Date.now() }); setActiveTab('console'); }} />
         )}
+        {activeTab === 'today' && <Briefing go={setActiveTab} />}
         {activeTab === 'portfolio' && <Portfolio />}
         {activeTab === 'security' && <SecurityView />}
         {activeTab === 'settings' && <SettingsPanel />}

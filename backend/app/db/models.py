@@ -96,6 +96,14 @@ class Holding(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class PortfolioHistory(Base):
+    """Portfolio Advisor: total value once per day (recorded when prices are refreshed)."""
+    __tablename__ = "portfolio_history"
+    day = Column(String, primary_key=True)        # ISO date
+    value = Column(Float, nullable=False)
+    invested = Column(Float, nullable=False)
+
+
 class InvestorProfile(Base):
     """Portfolio Advisor: the owner's goals and comfort with risk (single row, id=1)."""
     __tablename__ = "investor_profile"

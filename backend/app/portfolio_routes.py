@@ -73,6 +73,19 @@ def portfolio_snapshot() -> dict:
             "disclaimer": portfolio.DISCLAIMER}
 
 
+def record_history(summary: dict, day: Optional[str] = None) -> None:
+    """One row per day: the latest refresh of the day wins."""
+    from datetime import date as _date
+    from app.db.models import PortfolioHistory
+    if not summary.get("count"):
+        return
+    day = day or _date.today().isoformat()
+    with SessionLocal() as db:
+        row = db.get(PortfolioHistory, day) or PortfolioHistory(day=day, value=0, invested=0)
+        row.value, row.invested = summary["value"], summary["invested"]
+        db.merge(row); db.commit()
+
+
 def create_portfolio_router(verify_session_token, require_pin):
     router = APIRouter(prefix="/api/portfolio", dependencies=[Depends(verify_session_token)])
 
@@ -167,7 +180,9 @@ def create_portfolio_router(verify_session_token, require_pin):
                 if row is not None:
                     row.last_price, row.price_date, row.price_source = p["price"], p["date"], p["source"]
             db.commit()
-        return {**portfolio_snapshot(), "updated": len(result["prices"]), "errors": result["errors"]}
+        snap = portfolio_snapshot()
+        record_history(snap["summary"])
+        return {**snap, "updated": len(result["prices"]), "errors": result["errors"]}
 
     @router.post("/project")
     def projection(body: ProjectBody):

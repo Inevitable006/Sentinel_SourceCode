@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Database, Home, Shield, Lock, ListTodo, PieChart } from 'lucide-react';
+import { Settings, Database, Home, Shield, Lock, ListTodo, PieChart, Sun } from 'lucide-react';
 import { apiPost, notifyLockStateChanged } from '../../lib/backend';
 import './Sidebar.css';
 
@@ -9,6 +9,7 @@ interface SidebarProps {
 }
 
 const NAV = [
+  { id: 'today', label: 'Today', Icon: Sun },
   { id: 'console', label: 'Console', Icon: Home },
   { id: 'workspace', label: 'Workspace', Icon: ListTodo },
   { id: 'memory', label: 'Memory', Icon: Database },
