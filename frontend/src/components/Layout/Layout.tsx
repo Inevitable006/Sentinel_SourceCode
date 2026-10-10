@@ -7,6 +7,7 @@ import SettingsPanel from '../Settings/SettingsPanel';
 import Workspace from '../Workspace/Workspace';
 import MemoryView from '../Workspace/MemoryView';
 import SecurityView from '../Workspace/SecurityView';
+import Portfolio from '../Portfolio/Portfolio';
 
 const Layout: React.FC = () => {
   const [activeTab, setActiveTab] = useState('console');
@@ -24,6 +25,7 @@ const Layout: React.FC = () => {
         {activeTab === 'memory' && (
           <MemoryView onResume={(threadId) => { setResumeRequest({ threadId, nonce: Date.now() }); setActiveTab('console'); }} />
         )}
+        {activeTab === 'portfolio' && <Portfolio />}
         {activeTab === 'security' && <SecurityView />}
         {activeTab === 'settings' && <SettingsPanel />}
       </main>

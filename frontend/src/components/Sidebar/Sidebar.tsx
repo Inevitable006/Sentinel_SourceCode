@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Database, Home, Shield, Lock, ListTodo } from 'lucide-react';
+import { Settings, Database, Home, Shield, Lock, ListTodo, PieChart } from 'lucide-react';
 import { apiPost, notifyLockStateChanged } from '../../lib/backend';
 import './Sidebar.css';
 
@@ -12,6 +12,7 @@ const NAV = [
   { id: 'console', label: 'Console', Icon: Home },
   { id: 'workspace', label: 'Workspace', Icon: ListTodo },
   { id: 'memory', label: 'Memory', Icon: Database },
+  { id: 'portfolio', label: 'Portfolio', Icon: PieChart },
   { id: 'security', label: 'Security', Icon: Shield },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];

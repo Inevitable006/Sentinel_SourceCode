@@ -40,3 +40,7 @@
 .ws-sev-critical { border-color: rgba(255,90,90,0.6); }
 .ws-sev-warning { border-color: rgba(255,170,60,0.5); }
 .ws-item ol { margin: 0; padding-left: 1.2rem; font-size: 0.88rem; }
+.pf-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.pf-table th, .pf-table td { text-align: left; padding: 0.35rem 0.4rem; border-bottom: 1px solid rgba(255,255,255,0.08); vertical-align: top; }
+.ws-file input { display: block; font-size: 0.8rem; }
+.ws-row label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; }

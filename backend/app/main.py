@@ -440,6 +440,8 @@ from app.workspace_routes import create_workspace_router
 app.include_router(create_workspace_router(verify_session_token, _require_fresh_pin))
 from app.watch_routes import create_watch_router
 app.include_router(create_watch_router(verify_session_token, _require_fresh_pin))
+from app.portfolio_routes import create_portfolio_router
+app.include_router(create_portfolio_router(verify_session_token, _require_fresh_pin))
 
 
 @app.get("/api/unlock/status")

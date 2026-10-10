@@ -208,6 +208,39 @@ def register_all_skills():
         "skill_read_document": "read_document",
     })
 
+    # ── Portfolio Advisor (read-only; owner makes every transaction) ──
+    skill_router.register_skill(SkillManifest(
+        name="portfolio_advisor",
+        version="1.0.0",
+        description="Reads the owner's portfolio and profile and computes projections. Advice only; never trades or logs in anywhere.",
+        risk_tier=RiskTier.TIER_2,
+        required_capabilities=[],
+        tools=[
+            SkillToolSchema(
+                name="skill_portfolio_overview",
+                description="Returns the owner's holdings, values, gains, allocation and rule-based suggestions with reasons. Use these exact numbers; do not invent figures.",
+                parameters={},
+                required_capabilities=[]
+            ),
+            SkillToolSchema(
+                name="skill_project_investment",
+                description="Projects a monthly SIP and/or lumpsum over N years as a pessimistic/expected/optimistic range. category: equity, debt, hybrid or gold.",
+                parameters={"monthly": {"type": "number"}, "years": {"type": "number"},
+                            "lumpsum": {"type": "number"}, "category": {"type": "string"}},
+                required_capabilities=[]
+            ),
+        ],
+        entry_point="skills.portfolio_advisor",
+        lazy_load=True,
+        gpu_policy=GpuPolicy.FORBIDDEN,
+        requires_confirmation=True,
+    ))
+
+    _register_function_aliases("portfolio_advisor", {
+        "skill_portfolio_overview": "portfolio_overview",
+        "skill_project_investment": "project_investment",
+    })
+
     # ── Finance Analysis ─────────────────────────────────────
     skill_router.register_skill(SkillManifest(
         name="finance_analysis",

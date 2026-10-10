@@ -78,6 +78,31 @@ class WatchAlert(Base):
     last_seen = Column(DateTime, default=datetime.utcnow)
 
 
+class Holding(Base):
+    """Portfolio Advisor: one investment the owner holds (entered or imported; never from a bank login)."""
+    __tablename__ = "portfolio_holdings"
+    id = Column(String, primary_key=True)
+    kind = Column(String, index=True, nullable=False)    # "mf" | "stock" | "other"
+    name = Column(Text, nullable=False)
+    symbol = Column(String, default="")                  # NSE symbol, or AMFI scheme code for funds
+    isin = Column(String, default="")
+    units = Column(Float, default=0.0)
+    avg_cost = Column(Float, default=0.0)                # per unit
+    buy_date = Column(String, nullable=True)             # ISO date, optional
+    last_price = Column(Float, nullable=True)
+    price_date = Column(String, nullable=True)
+    price_source = Column(String, nullable=True)
+    category = Column(String, default="")                # e.g. equity / debt / hybrid / gold
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class InvestorProfile(Base):
+    """Portfolio Advisor: the owner's goals and comfort with risk (single row, id=1)."""
+    __tablename__ = "investor_profile"
+    id = Column(Integer, primary_key=True)
+    data = Column(Text, default="{}")
+
+
 class WorkItem(Base):
     """Owner-created tasks, drafts and plans, inside the encrypted database."""
     __tablename__ = "work_items"

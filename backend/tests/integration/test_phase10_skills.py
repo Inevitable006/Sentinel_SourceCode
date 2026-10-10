@@ -371,7 +371,7 @@ def test_skill_status():
     
     # All manifests
     manifests = skill_router.get_all_manifests()
-    check("get_all_manifests returns 7 skills", len(manifests) == 7)
+    check("get_all_manifests returns 8 skills", len(manifests) == 8)
 
 
 # ============================================================

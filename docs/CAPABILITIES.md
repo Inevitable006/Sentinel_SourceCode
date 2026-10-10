@@ -15,10 +15,11 @@ The single authoritative list. "Works" means exercised by automated tests on thi
 | Image analysis | Needs model files | Attach → validated → analyzed in memory. Without local LLaVA files the chat says the image could not be analyzed. |
 | Dictation | Needs model file | Shows unavailable until the Whisper model loads; vocabulary file missing (docs/VOICE.md). |
 | Speech output | Works, not heard in tests | Choose a male or female Windows voice (David / Zira on this PC) and speed in Settings → Voice, with Preview; saved for next time. Stops on lock, emergency stop and Voice off. |
+| Portfolio Advisor | Works (advice only) | Import holdings (Zerodha/Groww/CAMS CSV) or add by hand; value, gain, mix; fund NAVs (AMFI) and NSE prices when you press Refresh; suggestions with reasons and steps; SIP/lumpsum ranges; ask about it in chat. Never logs in or trades. |
 | System Watch | Works | Every 15 min + Check now: startup items, scheduled tasks, services, admin accounts, firewall, Defender and threats, programs running from Downloads/Temp, Sentinel's own files. Alerts with steps; only automatic reaction is Offline mode on a critical alert. Not an antivirus. |
 | Lock | Works | Manual, idle timeout, Windows lock and sleep (Electron powerMonitor; manual check recommended). UI hides data when lock state cannot be confirmed. |
 | Skill integrity | Works | Pinned SHA-256 per built-in skill checked at registration and load; development mode only with SENTINEL_SKILL_DEV=1. Re-pin with `tools/pin_skills.py`. |
 | Audit log | Works | HMAC-chained entries (DPAPI-protected key), tamper detection, 5 MB rotation, sanitized errors. Detects tampering; cannot prevent it by a process running as you. |
 | Installer | Needs owner steps | `tools/build_runtime.ps1` builds the portable runtime from files you download; then `npm run dist`. Clean-machine install not yet verified. |
 
-Not implemented (from the NEXUS idea): biometrics/Windows Hello, wake word, vector memory, multi-user, cross-device sync, creative media, health, portfolio analytics, OS-wide security monitoring.
+Not implemented (from the NEXUS idea): biometrics/Windows Hello, wake word, vector memory, multi-user, cross-device sync, creative media, health, OS-wide security monitoring.
