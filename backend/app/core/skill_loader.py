@@ -275,6 +275,47 @@ def register_all_skills():
                        ("skill_delete_file", "delete"), ("skill_make_folder", "mkdir")):
         _registry.preview_hooks[_tool] = (lambda op: lambda args, token: _file_ops.preview(op, args, token))(_op)
 
+    # ── Code assistant (read, Tier 2) and code tests (run, Tier 3) ──────
+    skill_router.register_skill(SkillManifest(
+        name="code_assistant",
+        version="1.0.0",
+        description="Lists, searches and reads code in the Sentinel Workspace folder. To change code, use the file tools (previewed, undoable).",
+        risk_tier=RiskTier.TIER_2,
+        required_capabilities=[],
+        tools=[
+            SkillToolSchema(name="skill_list_code_files", description="List code files in a project folder inside Sentinel Workspace (path relative to it; empty = all).",
+                            parameters={"path": {"type": "string"}}, required_capabilities=[]),
+            SkillToolSchema(name="skill_search_code", description="Find text in code files (case-insensitive); returns file:line matches.",
+                            parameters={"query": {"type": "string"}, "path": {"type": "string"}}, required_capabilities=[]),
+            SkillToolSchema(name="skill_read_code", description="Read numbered lines of a code file (up to 400 lines at a time).",
+                            parameters={"path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}},
+                            required_capabilities=[]),
+        ],
+        entry_point="skills.code_assistant",
+        lazy_load=True,
+        gpu_policy=GpuPolicy.FORBIDDEN,
+        requires_confirmation=True,
+    ))
+    _register_function_aliases("code_assistant", {
+        "skill_list_code_files": "list_code_files", "skill_search_code": "search_code", "skill_read_code": "read_code",
+    })
+    skill_router.register_skill(SkillManifest(
+        name="code_tests",
+        version="1.0.0",
+        description="Runs a project's Python unittest tests in the contained runner (no network, no other programs, project folder only).",
+        risk_tier=RiskTier.TIER_3,
+        required_capabilities=[SkillCapability.PROCESS_EXEC],
+        tools=[
+            SkillToolSchema(name="skill_run_python_tests", description="Run Python unittest tests for a project folder in Sentinel Workspace. pattern defaults to test*.py.",
+                            parameters={"path": {"type": "string"}, "pattern": {"type": "string"}}, required_capabilities=[]),
+        ],
+        entry_point="skills.code_assistant",
+        lazy_load=True,
+        gpu_policy=GpuPolicy.FORBIDDEN,
+        requires_confirmation=True,
+    ))
+    _register_function_aliases("code_tests", {"skill_run_python_tests": "run_python_tests"})
+
     # ── Finance Analysis ─────────────────────────────────────
     skill_router.register_skill(SkillManifest(
         name="finance_analysis",

@@ -92,7 +92,7 @@ def skill_enabled(name):
 
 
 DEFAULT_LIMITS = {"web_research": 20, "finance_analysis": 30, "python_coding": 20, "file_manager": 30,
-                  "system_ops": 30, "app_control": 10}   # runs per hour; 0 = unlimited
+                  "system_ops": 30, "app_control": 10, "code_tests": 20}   # runs per hour; 0 = unlimited
 
 
 def skill_limit(name) -> int:

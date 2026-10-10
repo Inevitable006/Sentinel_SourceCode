@@ -84,13 +84,15 @@ class _Job:
             self.handle = None
 
 
-def run_python(code: str):
-    """Returns (success, stdout, stderr). The caller has already obtained owner approval."""
+def run_python(code: str, workspace: Path = None):
+    """Returns (success, stdout, stderr). The caller has already obtained owner approval.
+    `workspace` is the only folder the script may read/write (default: the Sentinel Python workspace)."""
     if os.name != "nt":
         return False, "", "Error: Contained Python execution is only implemented on Windows."
     if not BOOT.is_file():
         return False, "", "Error: The sandbox bootstrap is missing."
-    WORKSPACE.mkdir(parents=True, exist_ok=True)
+    folder = Path(workspace) if workspace else WORKSPACE
+    folder.mkdir(parents=True, exist_ok=True)
     exe = interpreter()
     job = _Job()
     started = []
@@ -101,8 +103,8 @@ def run_python(code: str):
 
     try:
         return safe_process.run_command(
-            [exe, "-I", "-S", "-B", str(BOOT), str(WORKSPACE)],
-            timeout_seconds=TIMEOUT_SECONDS, cwd=str(WORKSPACE),
+            [exe, "-I", "-S", "-B", str(BOOT), str(folder)],
+            timeout_seconds=TIMEOUT_SECONDS, cwd=str(folder),
             extra_allowed=frozenset([exe]),
             env={"PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"},
             stdin_bytes=code.encode("utf-8"), on_start=contain)

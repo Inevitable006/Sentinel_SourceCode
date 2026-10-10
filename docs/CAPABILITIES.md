@@ -9,6 +9,7 @@ The single authoritative list. "Works" means exercised by automated tests on thi
 | Cancellation | Works | Stop cancels the request's own processes and network calls, including approved actions. |
 | Workspace | Works | Tasks with reminders, plans (step-by-step approval, interruption recovery), email/calendar/document drafts (never sent), memory, history with "continue conversation", privacy view, skill switches, emergency stop. |
 | Python coding skill | Works, contained | Separate isolated process, job-object memory cap, no network/processes/native code, files only in the Sentinel Python workspace, 20 s limit. Not a sandbox for hostile code. |
+| Coding | Works | In Sentinel Workspace: list, search and read code (Tier 2); run a project's unittest tests in the contained runner limited to that project folder (Tier 3, PIN); change code via file actions (preview + undo). |
 | Blender skill | Unavailable | Blender cannot be contained the same way; calls fail with an error. |
 | Web research / finance quote | Works (network) | Through the egress guard; connections pinned to the validated address; 2 MB response limit. |
 | File actions | Works | Create, edit, move, delete inside Documents\Sentinel Workspace only (SENTINEL_FILES to change). Preview on the approval card, refused if the file changed after approval, Undo for 5 minutes (Workspace → File actions), then final. Deleted files are held until the window closes. |

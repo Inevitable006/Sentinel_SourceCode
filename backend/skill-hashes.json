@@ -2,6 +2,7 @@
   "algorithm": "sha256",
   "modules": {
     "skills.app_control": "12503b982db7bf73d7bad10ee755410ee07ee2c9c8b7d1f538ed01272dc83bb2",
+    "skills.code_assistant": "7dd9f1debdd3c599b83999c4dfd0a4257c18ce83bb44ccaaa1c940b88189a470",
     "skills.core_diagnostics": "2cc2a97277abadcbac0f185d0d5b5b7aec72c9aae4551ae3b9221dd581f82b5b",
     "skills.document_analysis": "03c438337c1f4b77c111146c38acb858eac17094cef25dc191456a45b4778e56",
     "skills.file_manager": "77b3885a7a11f80f18b58494d1aa2a5740ede8b529ed3258538e3326ea2513ad",
