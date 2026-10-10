@@ -1,6 +1,6 @@
 """
 Skill: document_analysis
-Reads and extracts text from local files (TXT, CSV, JSON, MD) with strict path containment.
+Reads and extracts text from local files (TXT, CSV, JSON, MD, DOCX, XLSX) with strict path containment.
 Risk Tier: 2 (requires user confirmation for privacy)
 Capabilities: None
 """
@@ -38,12 +38,31 @@ def read_document(file_path: str) -> str:
     Reads the content of a local file safely.
     Enforces canonical path containment and output truncation (10KB limit).
     """
-    if not _is_path_contained(file_path, ALLOWED_DIRECTORIES):
+    from app.core.file_ops import files_root
+    allowed = ALLOWED_DIRECTORIES + [files_root()]
+    if not os.path.isabs(file_path) and os.path.isfile(os.path.join(files_root(), file_path)):
+        file_path = os.path.join(files_root(), file_path)     # names relative to Sentinel Workspace
+    if not _is_path_contained(file_path, allowed):
         return failed(f"Security Error: Path traversal blocked. The file '{file_path}' is outside the allowed safe directories.")
-        
+
     if not os.path.isfile(file_path):
         return failed(f"Error: File not found or is not a regular file: {file_path}")
-        
+
+    suffix = Path(file_path).suffix.lower()
+    if suffix in (".docx", ".xlsx"):
+        from app.core.office_text import OfficeError, docx_text, xlsx_text
+        try:
+            text = docx_text(file_path) if suffix == ".docx" else xlsx_text(file_path)
+        except OfficeError as e:
+            return failed(f"Error: {e}")
+        except Exception as e:
+            return failed(f"Error: could not read this document ({type(e).__name__}).")
+        if len(text) > 10240:
+            return text[:10240] + "\n... [TRUNCATED: Output exceeded 10KB limit]"
+        return text or "(The document has no text.)"
+    if suffix in (".pdf", ".doc", ".xls", ".ppt", ".pptx"):
+        return failed(f"Error: reading {suffix} files is not supported yet. Save it as .docx, .xlsx or .txt.")
+
     try:
         # Detect encoding simply by trying utf-8 then falling back to latin-1
         content = ""

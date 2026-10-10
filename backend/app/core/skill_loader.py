@@ -187,13 +187,13 @@ def register_all_skills():
     skill_router.register_skill(SkillManifest(
         name="document_analysis",
         version="1.0.0",
-        description="Reads and extracts text from local files (TXT, CSV, JSON, MD) with strict path containment.",
+        description="Reads and extracts text from local files (TXT, CSV, JSON, MD, Word .docx, Excel .xlsx) with strict path containment.",
         risk_tier=RiskTier.TIER_2,
         required_capabilities=[],
         tools=[
             SkillToolSchema(
                 name="skill_read_document",
-                description="Reads the text content of a local file safely. Enforces canonical path containment and output truncation.",
+                description="Reads the text of a local file (txt, csv, json, md, docx, xlsx) from the project, the Sentinel data folder or Sentinel Workspace. Enforces path containment and output truncation.",
                 parameters={"file_path": {"type": "string"}},
                 required_capabilities=[]
             ),

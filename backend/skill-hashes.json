@@ -3,7 +3,7 @@
   "modules": {
     "skills.app_control": "12503b982db7bf73d7bad10ee755410ee07ee2c9c8b7d1f538ed01272dc83bb2",
     "skills.core_diagnostics": "2cc2a97277abadcbac0f185d0d5b5b7aec72c9aae4551ae3b9221dd581f82b5b",
-    "skills.document_analysis": "e3e53629685226996da35397081847dee33b9e9043fc3bedc98ef89d8346b1ed",
+    "skills.document_analysis": "2502042f74a6653e9ce86f3a270a0d3355b1c96988af3142580d6f12737347e6",
     "skills.file_manager": "77b3885a7a11f80f18b58494d1aa2a5740ede8b529ed3258538e3326ea2513ad",
     "skills.finance_analysis": "7729568511559356c43601da087b62f5241a62e0e1a8e8eb031cc617abfdf812",
     "skills.portfolio_advisor": "16d41a988766f57264cfa8e1ef9faacbe9afdb1941321d30a5b6da51a762b3b7",
