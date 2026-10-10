@@ -222,3 +222,35 @@ def test_transactions_api_and_xirr(web):
     from app.db.models import PortfolioTransaction
     with SessionLocal() as db:
         assert db.query(PortfolioTransaction).count() == 0              # removed with the holding
+
+
+# ── expense ratios and likely overlap ───────────────────────────
+def test_cost_view_numbers():
+    summary = pf.summarize([
+        {"id": "a", "name": "ABC Flexi Cap Fund Regular Growth", "kind": "mf", "units": 1000, "avg_cost": 100, "last_price": 100, "category": "equity"},
+        {"id": "b", "name": "XYZ Nifty 50 Index Fund Direct Growth", "kind": "mf", "units": 100, "avg_cost": 100, "last_price": 100, "category": "equity"},
+        {"id": "c", "name": "INFY", "kind": "stock", "units": 1, "avg_cost": 1, "last_price": 1, "category": "equity"},
+    ])
+    v = pf.cost_view(summary, {"a": {"ter_pct": 1.8, "checked_on": "2026-10-10"}})
+    fund = v["funds"][0]
+    assert fund["yearly_cost"] == pytest.approx(1800)                     # 1.8% of ₹1,00,000
+    expected = 100000 * ((1.118 ** 10) - (1.10 ** 10))                   # 10 years at 10% vs 11.8% gross
+    assert fund["cost_over_10y"] == pytest.approx(expected, rel=1e-6)
+    assert fund["high"] is True and fund["direct_plan_could_save"] > 0
+    assert v["missing"] == ["XYZ Nifty 50 Index Fund Direct Growth"]       # stocks are never listed as missing
+
+
+def test_overlap_hint_for_same_type_funds():
+    funds = [{"name": "Fund A Large Cap Direct"}, {"name": "Fund B Bluechip Direct"}, {"name": "Fund C Small Cap Direct"}]
+    warnings = pf.overlap_warnings(funds)
+    assert len(warnings) == 1 and "2 large cap funds" in warnings[0]
+
+
+def test_costs_api(web):
+    client, _ = web
+    snap = client.post("/api/portfolio/holdings", headers=H, json={"kind": "mf", "name": "ABC Fund Direct Growth", "units": 10,
+                                                                   "avg_cost": 100, "category": "equity"}).json()
+    hid = snap["summary"]["holdings"][0]["id"]
+    assert client.post(f"/api/portfolio/costs/{hid}", headers=H, json={"ter_pct": 5}).status_code == 422
+    body = client.post(f"/api/portfolio/costs/{hid}", headers=H, json={"ter_pct": 0.45}).json()
+    assert body["funds"][0]["ter_pct"] == 0.45 and body["missing"] == []

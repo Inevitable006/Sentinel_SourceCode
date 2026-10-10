@@ -111,6 +111,14 @@ class FileAction(Base):
     status = Column(String, default="done")         # done | undone | final
 
 
+class HoldingCost(Base):
+    """Portfolio Advisor: a fund's yearly expense ratio (TER), entered by the owner from the factsheet/app."""
+    __tablename__ = "portfolio_costs"
+    holding_id = Column(String, primary_key=True)
+    ter_pct = Column(Float, nullable=False)
+    checked_on = Column(String, nullable=True)     # when the owner last checked it
+
+
 class PortfolioTransaction(Base):
     """Portfolio Advisor: one buy / sell / dividend, used for the true yearly return (XIRR)."""
     __tablename__ = "portfolio_transactions"

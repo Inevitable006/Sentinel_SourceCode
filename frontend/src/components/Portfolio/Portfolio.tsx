@@ -3,6 +3,7 @@ import { apiGet, apiPost, backendInfo } from '../../lib/backend';
 import { usePinAction } from '../Workspace/usePinAction';
 import '../Workspace/Workspace.css';
 import TaxPanel from './TaxPanel';
+import CostPanel from './CostPanel';
 
 type Profile = { risk: 'conservative' | 'moderate' | 'aggressive'; horizon_years: number; monthly_amount: number;
   monthly_expenses: number; emergency_fund: number; goal: string; tax_slab_pct: number; set?: boolean };
@@ -209,6 +210,7 @@ const Portfolio: React.FC = () => {
       )}
 
       <TaxPanel refreshKey={snap} />
+      {s && <CostPanel holdings={s.holdings} refreshKey={snap} />}
 
       <h3>Suggestions</h3>
       {!profile?.set && <p className="ws-bad">Fill in "About you" below for suggestions that fit you.</p>}

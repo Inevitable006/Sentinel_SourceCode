@@ -25,9 +25,18 @@ def portfolio_overview() -> str:
                      for h in s["holdings"][:25]],
         "suggestions": [{k: x.get(k) for k in ("title", "detail", "reason", "steps")} for x in snap["suggestions"]],
         "tax_estimate": _tax_summary(),
+        "costs": _cost_summary(),
         "disclaimer": snap["disclaimer"],
     }
     return json.dumps(compact, ensure_ascii=False)
+
+
+def _cost_summary():
+    try:
+        from app.portfolio_routes import costs_snapshot
+        return costs_snapshot()
+    except Exception:
+        return None
 
 
 def _tax_summary():

@@ -148,6 +148,17 @@ def record_history(summary: dict, day: Optional[str] = None) -> None:
         db.merge(row); db.commit()
 
 
+class CostBody(BaseModel):
+    ter_pct: float = Field(ge=0, le=3)      # SEBI caps TER well below 3% a year
+
+
+def costs_snapshot() -> dict:
+    from app.db.models import HoldingCost
+    with SessionLocal() as db:
+        costs = {c.holding_id: {"ter_pct": c.ter_pct, "checked_on": c.checked_on} for c in db.query(HoldingCost).all()}
+    return portfolio.cost_view(portfolio_snapshot()["summary"], costs)
+
+
 def tax_snapshot() -> dict:
     from app.core import tax_in
     with SessionLocal() as db:
@@ -205,8 +216,9 @@ def create_portfolio_router(verify_session_token, require_pin):
             row = db.get(Holding, holding_id)
             if row is None:
                 raise HTTPException(404, "Holding not found.")
-            from app.db.models import PortfolioTransaction
+            from app.db.models import PortfolioTransaction, HoldingCost
             db.query(PortfolioTransaction).filter(PortfolioTransaction.holding_id == holding_id).delete()
+            db.query(HoldingCost).filter(HoldingCost.holding_id == holding_id).delete()
             db.delete(row); db.commit()
         return portfolio_snapshot()
 
@@ -235,8 +247,9 @@ def create_portfolio_router(verify_session_token, require_pin):
             require_pin(body.pin, "Enter your PIN to replace all holdings.")
         with SessionLocal() as db:
             if body.replace:
-                from app.db.models import PortfolioTransaction
+                from app.db.models import PortfolioTransaction, HoldingCost
                 db.query(PortfolioTransaction).delete()
+                db.query(HoldingCost).delete()
                 db.query(Holding).delete()
             for h in body.holdings:
                 db.add(Holding(id=str(uuid.uuid4()), **h.model_dump()))
@@ -312,6 +325,25 @@ def create_portfolio_router(verify_session_token, require_pin):
                     existing.add(key); added += 1
             db.commit()
         return {**portfolio_snapshot(), "added": added}
+
+    @router.get("/costs")
+    def costs():
+        unlocked()
+        return costs_snapshot()
+
+    @router.post("/costs/{holding_id}")
+    def set_cost(holding_id: str, body: CostBody):
+        unlocked()
+        from datetime import date as _date
+        from app.db.models import HoldingCost
+        with SessionLocal() as db:
+            h = db.get(Holding, holding_id)
+            if h is None or h.kind != "mf":
+                raise HTTPException(404, "Fund not found.")
+            row = db.get(HoldingCost, holding_id) or HoldingCost(holding_id=holding_id, ter_pct=0)
+            row.ter_pct, row.checked_on = body.ter_pct, _date.today().isoformat()
+            db.merge(row); db.commit()
+        return costs_snapshot()
 
     @router.get("/tax")
     def tax():

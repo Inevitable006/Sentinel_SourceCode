@@ -299,6 +299,62 @@ def parse_transactions_csv(text: str) -> Dict:
     return {"transactions": out, "skipped": skipped}
 
 
+# ── costs (expense ratio) and likely overlap ────────────────────
+HIGH_TER = {"equity": 1.0, "hybrid": 1.0, "debt": 0.6, "gold": 0.6}     # % a year; above this is "high" for a direct plan
+TYPICAL_REGULAR_EXTRA = 0.75                                           # regular plans usually cost ~0.5–1% more
+
+
+def cost_view(summary: dict, costs: Dict[str, dict], years: int = 10) -> dict:
+    """Yearly cost in rupees and what the fee takes over `years`, for funds with a TER entered."""
+    rows, total_year, total_drag = [], 0.0, 0.0
+    for h in summary["holdings"]:
+        c = costs.get(h["id"])
+        if h["kind"] != "mf" or not c:
+            continue
+        ter = c["ter_pct"] / 100
+        value = h["value"]
+        assumed = RETURN_ASSUMPTIONS.get(h.get("category") or "equity", RETURN_ASSUMPTIONS["equity"])[1]
+        # Value after `years` with the fee vs if the same fund had no fee (returns are after-fee in reality).
+        with_fee = value * (1 + assumed) ** years
+        without_fee = value * (1 + assumed + ter) ** years
+        yearly = value * ter
+        row = {"id": h["id"], "name": h["name"], "ter_pct": c["ter_pct"], "checked_on": c.get("checked_on"),
+               "yearly_cost": round(yearly, 2), f"cost_over_{years}y": round(without_fee - with_fee, 2),
+               "high": c["ter_pct"] > HIGH_TER.get(h.get("category") or "equity", 1.0)}
+        if "regular" in h["name"].lower():
+            saved = value * (1 + assumed + TYPICAL_REGULAR_EXTRA / 100) ** years - with_fee
+            row["direct_plan_could_save"] = round(saved, 2)
+        rows.append(row)
+        total_year += yearly
+        total_drag += without_fee - with_fee
+    funds = [h for h in summary["holdings"] if h["kind"] == "mf"]
+    return {"funds": rows, "missing": [h["name"] for h in funds if h["id"] not in costs], "years": years,
+            "yearly_total": round(total_year, 2), f"total_cost_over_{years}y": round(total_drag, 2),
+            "overlap_warnings": overlap_warnings(funds),
+            "note": f"Uses the expense ratios you entered and an assumed {int(RETURN_ASSUMPTIONS['equity'][1] * 100)}% yearly equity return."}
+
+
+_FUND_TYPES = [("large cap", ["large cap", "bluechip", "nifty 50", "sensex", "top 100"]),
+               ("flexi / multi cap", ["flexi cap", "multi cap", "multicap", "focused"]),
+               ("mid cap", ["mid cap", "midcap"]), ("small cap", ["small cap", "smallcap"]),
+               ("ELSS / tax saver", ["elss", "tax saver", "tax saving"]), ("index (Nifty 50)", ["nifty 50 index"]),
+               ("value / contra", ["value", "contra"])]
+
+
+def overlap_warnings(funds: List[dict]) -> List[str]:
+    """Funds of the same type usually hold many of the same stocks. Name-based, so only a hint."""
+    groups: Dict[str, List[str]] = {}
+    for f in funds:
+        name = f["name"].lower()
+        for label, words in _FUND_TYPES:
+            if any(w in name for w in words):
+                groups.setdefault(label, []).append(f["name"])
+                break
+    return [f"You hold {len(names)} {label} funds ({', '.join(names[:3])}). Funds of the same type often own many of the same "
+            "stocks, so this may add little diversification. Compare their top holdings on the fund factsheets."
+            for label, names in groups.items() if len(names) > 1]
+
+
 # ── suggestions (rule-based, explainable) ───────────────────────
 def target_equity(profile: dict) -> float:
     base = RISK_TARGETS.get(profile.get("risk", "moderate"), 0.6)
