@@ -105,6 +105,8 @@ function Get-BusyNote([string]$what) {
     node --test tools/tests/safe-mode.test.mjs; Record-Result "safe-mode JavaScript tests" $LASTEXITCODE
     node --test tools/tests/os-lock.test.mjs; Record-Result "OS lock JavaScript tests" $LASTEXITCODE
     node --test tools/tests/packaging.test.mjs; Record-Result "packaging JavaScript tests" $LASTEXITCODE
+    node --test tools/tests/readiness.test.mjs; Record-Result "readiness JavaScript tests" $LASTEXITCODE
+    node --test frontend/tests/settings-*.test.mjs; Record-Result "settings JavaScript tests" $LASTEXITCODE
   }
 
   if (Want "smoke") {

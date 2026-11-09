@@ -1,5 +1,7 @@
 # Sentinel tracker
 
+Parallel development entry point (2026-10-31): `README_ANTIGRAVITY.md`. AntiGravity owns the bounded A1–A3 frontend/documentation queue; Codex owns backend/security and release integration. Read `docs/coordination/ANTIGRAVITY_STATUS.md`, `CODEX_STATUS.md` and the versioned readiness contract before editing. Neither agent's chat is automatically visible to the other.
+
 Live status of the work. Claude updates it as each step finishes.
 ✅ done · 🔄 in progress · ⏳ next · ⛔ needs you · 💤 later
 
@@ -62,3 +64,7 @@ Resumed from `9a0668b` on `phase1/security` (Phase 10 coding pack). Coding test 
 | 2026-09-27 | Phase 1 security foundation: egress guard, PIN unlock, encrypted DB, secrets vault, redaction, retention; independent review fixed |
 | 2026-09-27 | Phase 1 plan approved (decisions D1–D5) |
 | 2026-09-27 | Phase 0 stabilize: 158 tests, chat smoke test and Electron start green on Windows |
+
+2026-10-25 update (T-12): local semantic retrieval is implemented using a pinned English BGE GGUF and the existing CPU engine. Native offline smoke and frontend build pass. Encrypted integration testing is blocked by Windows Application Control refusing the existing SQLCipher library; the owner is arranging approval. Previous regression counts do not validate these new changes. See `docs/DOCUMENT_SEARCH.md` and `docs/tasks/T-12-personal-assistant-completion.md`. The installer has not yet been rebuilt for this increment.
+
+2026-10-31: SQLCipher blocker no longer reproduces. Semantic retrieval passes 17 selected tests, full suite 627, and real offline encrypted smoke. Installer rebuild and actual bundled-runtime encrypted semantic smoke pass; T-12 records verification. Remaining roadmap work is unchanged.

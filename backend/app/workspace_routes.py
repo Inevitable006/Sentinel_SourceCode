@@ -57,6 +57,7 @@ class MemoryBody(BaseModel):
 
 class DocumentSearchBody(BaseModel):
     query: str = Field(min_length=1, max_length=300)
+    mode: Literal['keyword', 'semantic'] = 'keyword'
 
 
 class LimitBody(BaseModel):
@@ -159,14 +160,43 @@ def require_plan_available(item):
 def create_workspace_router(verify_session_token, require_pin):
     router = APIRouter(prefix="/api/workspace", dependencies=[Depends(verify_session_token), Depends(require_owner)])
 
+    @router.get('/readiness')
+    def readiness():
+        from app.core.readiness import snapshot
+        result = snapshot()
+        require_owner()  # Do not return cached facts after a lock during the checks.
+        return result
+
     @router.post("/documents/search")
     def document_search(body: DocumentSearchBody):
         from app.core.document_search import search_documents
         try:
+            if body.mode == 'semantic':
+                from app.core.semantic_search import search
+                return search(body.query, limit=20)
             with SessionLocal() as db:
                 return search_documents(db, body.query, limit=20)
         except ValueError as exc:
             raise HTTPException(400, str(exc))
+
+    @router.get('/documents-index/status')
+    def document_index_status():
+        from app.core.semantic_search import status
+        return status()
+
+    @router.post('/documents-index/next')
+    def document_index_next():
+        from app.core.semantic_search import index_next, SemanticError
+        try:
+            return index_next()
+        except SemanticError as exc:
+            raise HTTPException(409, str(exc))
+
+    @router.post('/documents-index/cancel')
+    def document_index_cancel():
+        from app.core.semantic_search import cancel
+        cancel()
+        return {'cancelled': True}
 
     @router.get("/documents/{item_id}")
     def document(item_id: str):

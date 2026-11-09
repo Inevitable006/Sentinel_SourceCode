@@ -1,5 +1,5 @@
 # SENTINEL: Assessment & Roadmap
-_Living plan. Last updated 2026-10-17: 582 backend tests, 13 memory checks, 17 JavaScript checks and frontend build pass. Real Qwen 7B GPU chat and cleanup pass. Added professional calculators, scheduled plans, battery/GPU-heat pauses and a Google read-only connection with mocked-provider verification. Portable runtime imports the backend. Google live consent and clean-machine installation remain unverified. Advanced voice identity, learned semantic retrieval and isolation of every skill remain unfinished. Current completion ledger: `docs/tasks/T-09-roadmap-completion.md`; Google scope: T-10. Authoritative feature list: `docs/CAPABILITIES.md`._
+_Living plan. Updated 2026-10-31: SQLCipher imports again; 627 backend tests, 13 memory checks, 18 JavaScript checks and frontend build pass. Local semantic document retrieval passes real offline model and encrypted lifecycle checks. Full roadmap remains incomplete; current work is recorded in T-12 and remaining phases in T-09._
 
 ## 1. Where things stand
 
@@ -109,3 +109,5 @@ One profession at a time, each a pack of knowledge + tools + checks + tests: fin
 - **Watcher (Windows checks without screenshots):** `tools\start_watcher.bat` (first time: `tools\setup_phase1.bat`); leave the window open. Claude writes one word to `docs\runs\request.txt`: `quick | tests | pytest | smoke | electron | env | gpu | all | deps | probe | status | commit | ff-main`. The watcher runs that fixed command and writes `docs\runs\latest.txt` + `watcher_status.txt`. `commit` uses `docs\runs\commit_msg.txt`, never on `main`, never pushes. Claude reads summary lines only.
 - **Git:** writes (commit/branch/merge) only on Windows (watcher or scripts). The Linux side uses read-only `git --no-optional-locks`: its shell can't delete files, so a normal `git status` can leave a stale `index.lock`. The owner pushes, and only after the repo is private.
 - **Sessions:** one phase per session; this roadmap is the handoff and is updated at the end of each phase.
+
+2026-10-25 update (T-12): local semantic retrieval is implemented using a pinned English BGE GGUF and the existing CPU engine. Native offline smoke and frontend build pass. Encrypted integration testing is blocked by Windows Application Control refusing the existing SQLCipher library; the owner is arranging approval. Previous regression counts do not validate these new changes. See `docs/DOCUMENT_SEARCH.md` and `docs/tasks/T-12-personal-assistant-completion.md`. The installer has not yet been rebuilt for this increment.

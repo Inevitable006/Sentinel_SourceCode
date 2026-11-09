@@ -20,3 +20,12 @@ test('a portable Python runtime is packaged and used when installed', () => {
   assert.match(main, /path\.join\(process\.resourcesPath, 'python', 'python\.exe'\)/);
   assert.doesNotMatch(main, /Users\\\\|OneDrive|AppData\\\\Local\\\\Python/);
 });
+
+test('only the pinned small search model is explicitly bundled', () => {
+  const models = pkg.build.extraResources.filter(r => r.from.startsWith('backend/models'));
+  assert.deepEqual(models, [{
+    from: 'backend/models/bge-small-en-v1.5-q8_0.gguf',
+    to: 'backend/models/bge-small-en-v1.5-q8_0.gguf',
+  }]);
+  assert.ok(fs.existsSync(path.join(root, 'backend', 'embedding-model-LICENSE.txt')));
+});

@@ -10,7 +10,7 @@ This is the encrypted retrieval foundation, not learned semantic search. Verify 
 
 Completed. Encrypted keyword retrieval foundation over documents saved in Sentinel Workspace is implemented and verified.
 
-- **Storage & Indexing**: Uses SQLCipher FTS5 virtual table (`document_fts`) with transactional sync on create, edit, delete, and kind changes.
-- **Security & Privacy**: Excludes private drafts (emails, calendar); locked database strictly denies search; excerpts are untrusted source material, bounded to 1,200 chars and max 5 results; tool confirmation enforced (Tier 2).
+- **Storage & Indexing**: Uses SQLCipher FTS5 virtual table (`fts_documents`) with transactional sync on create, edit, delete, and kind changes.
+- **Security & Privacy**: Excludes private drafts (emails, calendar); locked database strictly denies search; excerpts are untrusted source material, bounded to 1,200 chars, max 5 tool results or 20 UI results; tool confirmation enforced (Tier 2).
 - **API & UI**: Authenticated Workspace routes (`/api/workspace/documents/search` and `/{id}`) with DocumentSearch UI component embedded in the Documents workspace tab.
 - **Verification**: All 9 unit and integration tests in `tests/integration/test_document_search.py` pass; full test suite passes.

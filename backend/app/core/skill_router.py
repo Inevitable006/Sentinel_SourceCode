@@ -137,17 +137,22 @@ class SkillRouter:
                     f"{resource_governor.state.value} state."
                 )
 
-        # Lazy load the module
-        if not record.is_loaded:
-            self._load_module(skill_name)
-
-        # Find and call the tool function
-        func = self._resolve_tool_function(record, tool_name)
-        if func is None:
-            return failed(f"Error: Tool function '{tool_name}' not found in skill module '{skill_name}'.")
-
-        # Inject memory access if the skill has the capability
-        enriched_args = self._inject_capabilities(manifest, args)
+        # Pure calculators execute only checked source in a contained child. Never
+        # load their module or inject parent services as an execution fallback.
+        from app.core.pure_skill_worker import TOOLS, run_pure
+        if skill_name in TOOLS:
+            function_name = tool_name.removeprefix('skill_')
+            if tool_name != 'skill_' + function_name or function_name not in TOOLS[skill_name]:
+                return failed('Calculation worker does not support this tool alias.')
+            func = lambda **values: run_pure(skill_name, function_name, values)
+            enriched_args = args.copy()
+        else:
+            if not record.is_loaded:
+                self._load_module(skill_name)
+            func = self._resolve_tool_function(record, tool_name)
+            if func is None:
+                return failed(f"Error: Tool function '{tool_name}' not found in skill module '{skill_name}'.")
+            enriched_args = self._inject_capabilities(manifest, args)
 
         # Execute with output cap
         try:

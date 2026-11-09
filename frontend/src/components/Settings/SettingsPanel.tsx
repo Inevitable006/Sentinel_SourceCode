@@ -3,6 +3,8 @@ import './SettingsPanel.css';
 import VoiceSettings from './VoiceSettings';
 import BackupSettings from './BackupSettings';
 import GoogleSettings from './GoogleSettings';
+import ReadinessPanel from './ReadinessPanel';
+import ModelStatus from './ModelStatus';
 import { apiGet, apiPost, ApiError, timeAgo, type EgressEvent, type EgressStatus, type ModelsInfo, type UnlockStatus } from '../../lib/backend';
 
 interface ModelProfile {
@@ -306,6 +308,7 @@ const SettingsPanel: React.FC = () => {
   return (
     <div className="settings-container glass-panel">
       <h2>Sentinel Configuration</h2>
+      <ReadinessPanel />
       <VoiceSettings />
       <BackupSettings />
       <GoogleSettings />
@@ -320,22 +323,7 @@ const SettingsPanel: React.FC = () => {
             </option>
           ))}
         </select>
-        {modelInfo && (
-          <p className="settings-desc">
-            {modelInfo.loaded
-              ? `Loaded now: ${modelInfo.loaded.name ?? modelInfo.loaded.profile_id} on the ${String(modelInfo.loaded.engine ?? '').toUpperCase()}.`
-              : 'No model loaded right now.'}
-            {' '}GPU engine: {modelInfo.gpu_engine?.available
-              ? (modelInfo.gpu_engine.running ? `running (${((modelInfo.gpu_engine.vram_mb ?? 0) / 1024).toFixed(1)} GB of VRAM)` : 'ready')
-              : `not available (${modelInfo.gpu_engine?.reason ?? 'unknown'})`}.
-          </p>
-        )}
-        {(modelInfo?.loaded?.notes?.length ?? 0) > 0 && (
-          <p className="settings-desc">Skipped: {modelInfo!.loaded!.notes.join(' · ')}</p>
-        )}
-        {!modelInfo?.loaded && modelInfo?.last_load_error && (
-          <p className="settings-desc">Last load problem: {modelInfo.last_load_error}</p>
-        )}
+        <ModelStatus info={modelInfo} activeProfile={activeModel} />
       </div>
 
       <div className="settings-section">

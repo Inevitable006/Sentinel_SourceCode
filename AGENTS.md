@@ -3,6 +3,7 @@
 Sentinel is a private, local-first personal assistant for ONE owner: Electron + React UI (`src/main`, `frontend/`) and a Python FastAPI backend (`backend/`). Privacy and system stability come before features.
 
 ## Before you start
+- For coordinated AntiGravity/Codex work, read `README_ANTIGRAVITY.md` and both status files in `docs/coordination/`. Its A1–A3 sections are scoped task cards; honor file ownership before editing.
 - Read `docs/ROADMAP.md` (current phase and decisions) and your task card in `docs/tasks/`.
 - Do only what the task card asks. If something is unclear or looks wrong, stop and write your question in the card's Report section instead of guessing.
 

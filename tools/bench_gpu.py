@@ -1,6 +1,7 @@
 """
 GPU engine benchmark (Windows): starts Sentinel's llama-server sidecar for each downloaded model,
-streams one answer and prints load time, time to first token, speed and the VRAM it used.
+streams one answer and prints load time, time to first chunk, chunk rate and VRAM use.
+Stream chunks are not guaranteed to equal tokenizer tokens; this is not a tokens/s benchmark.
 
 Your model files are only read. Logs go to a temporary folder, never into your Sentinel data.
 The same safety checks as in the app run (binary hashes, 127.0.0.1, API key, port owner).
@@ -24,7 +25,15 @@ from app.core import llama_sidecar as ls  # noqa: E402
 MODELS = [("Qwen 2.5 1.5B", "qwen2.5-1.5b-instruct-q4_k_m.gguf", 2048),
           ("Llama 3.2 3B", "llama-3.2-3b-instruct-q4_k_m.gguf", 4096),
           ("Qwen 2.5 7B", "qwen2.5-7b-instruct-q4_k_m.gguf", 4096)]
-PROMPT = "<|im_start|>user\nExplain in about 120 words why the sky is blue.<|im_end|>\n<|im_start|>assistant\n"
+QUESTION = "Explain in about 120 words why the sky is blue."
+
+
+def benchmark_prompt(filename):
+    if filename.startswith('llama-3.2-'):
+        return (f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{QUESTION}"
+                "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+                ['<|eot_id|>', '<|end_of_text|>'])
+    return (f"<|im_start|>user\n{QUESTION}<|im_end|>\n<|im_start|>assistant\n", ['<|im_end|>'])
 
 
 def main() -> int:
@@ -41,6 +50,7 @@ def main() -> int:
                          capture_output=True, text=True, timeout=120, creationflags=ls._creation_flags())
     lines = [ln.strip() for ln in (ver.stdout + ver.stderr).splitlines() if ln.strip()]
     print("BENCH llama-server:", " | ".join(lines[-3:]))
+    failed = False
     for label, fname, n_ctx in MODELS:
         path = REAL_MODELS / fname
         if not path.exists():
@@ -55,19 +65,26 @@ def main() -> int:
             llm = sc.start(path, n_ctx=n_ctx)
         except ls.SidecarError as e:
             print(f"BENCH {label}: start FAILED: {e}")
+            failed = True
             continue
         load_s = time.time() - t0
         try:
             t1, first, n = time.time(), None, 0
-            for _ in llm(prompt=PROMPT, max_tokens=200, stop=["<|im_end|>"]):
+            prompt, stops = benchmark_prompt(fname)
+            for _ in llm(prompt=prompt, max_tokens=200, stop=stops):
                 n += 1
                 first = first or time.time()
             gen_s = time.time() - (first or t1)
-            print(f"BENCH {label}: load {load_s:.1f}s | first token {(first or t1) - t1:.2f}s | "
-                  f"{n} tokens at {n / gen_s if gen_s > 0 else 0:.1f} tok/s | VRAM {sc.own_vram_mb() / 1024:.2f} GB")
+            if first is None:
+                print(f"BENCH {label}: FAILED: no streamed output")
+                failed = True
+                continue
+            print(f"BENCH {label}: load {load_s:.1f}s | first chunk {first - t1:.2f}s | "
+                  f"{n} chunks at {max(0, n - 1) / gen_s if gen_s > 0 else 0:.1f} chunks/s after first chunk "
+                  f"(not tokenizer tokens/s) | VRAM {sc.own_vram_mb() / 1024:.2f} GB")
         finally:
             sc.stop()
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
