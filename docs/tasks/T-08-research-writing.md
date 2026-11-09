@@ -1,0 +1,13 @@
+# T-08: Research and writing pack
+
+- **Goal:** Next Phase 10 pack, requested by the owner on 2026-10-17. Reuse existing search, document reading, local chat and draft/file workflows; add structured writing briefs and deterministic draft checks.
+- **Branch:** `phase1/security`; preserve earlier coding changes, no commits or pushes.
+- **Files:** new `backend/skills/research_writing/__init__.py`, skill registration and hashes, skill tests, Phase 10 registration test, capability/roadmap/tracker documentation.
+- **Boundaries:** No new dependencies, network calls, file access, model calls, sending or publishing. Use existing approval and skill-switch handling. Checks describe text structure, not factual truth or source credibility.
+- **Acceptance:** Briefs for reports/articles/emails; word limits, possible unfinished placeholders, numbered citation/reference consistency; bounded inputs/outputs; real tool approval path and disabled skill tested; full regression/build checks.
+- **Report:** First version complete, 2026-10-17. Added `research_writing` with `skill_prepare_writing_brief` and `skill_review_writing`, registered through the existing Tier 2 approval/switch system and pinned its module hash. Added 15 behavioral cases and updated the Phase 10 manifest expectation from 11 to 12 skills. Updated capabilities, roadmap and tracker. Earlier coding changes preserved.
+  - Validation: `532 passed in 27.65s`; memory `13/13 passed`; 17 JavaScript checks, frontend typecheck/build and both Electron syntax checks passed; `tools/check.ps1 -Only tests` exit 0; `git diff --check` passed. Evidence: `docs/runs/check_20261017_161554.txt`.
+  - Initial targeted tests exposed two fixture expectations, corrected before the full pass: the sample had five words instead of six, and the existing disabled-skill response says "turned off". No existing assertions weakened.
+  - Limits: supplied text only, 60,000-character input cap; one numbered reference style; no semantic citation checking, grammar model, automatic collection, source verification or publishing. No live LLM routing/desktop smoke was performed in this checkpoint. Existing research, reading and document saving remain separate approved workflows.
+  - Try in chat: "Prepare a report brief about urban gardens for beginners" or "Review this draft for a 300-word limit and missing numbered references: …". Ask the local model to draft from collected evidence, then run the mechanical review. Save via Workspace Documents or approved file actions.
+  - Next scheduled Phase 10 pack: marketing/business. No new dependencies, network calls, commits or pushes.

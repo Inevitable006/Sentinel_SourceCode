@@ -99,6 +99,8 @@ const SystemStatus: React.FC = () => {
           <div className="widget-header"><HardDrive size={16} /><span>This PC</span></div>
           <div className="widget-body">
             <Bar label="CPU" right={pct(gov?.cpu_percent)} value={gov?.cpu_percent} />
+            {gov?.battery && <Bar label={gov.battery.plugged_in ? 'Battery · plugged in' : 'Battery'} right={pct(gov.battery.percent)} value={gov.battery.percent} />}
+            {gov?.pause_reason && <p className="privacy-sub">{gov.pause_reason}</p>}
             <Bar label="RAM"
                  right={gov?.ram_total_gb ? `${gov.ram_used_gb} / ${gov.ram_total_gb} GB` : pct(gov?.ram_percent)}
                  value={gov?.ram_percent} />

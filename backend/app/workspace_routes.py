@@ -55,6 +55,10 @@ class MemoryBody(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
+class DocumentSearchBody(BaseModel):
+    query: str = Field(min_length=1, max_length=300)
+
+
 class LimitBody(BaseModel):
     limit_per_hour: int = Field(ge=0, le=1000)   # 0 = unlimited
     pin: str | None = None
@@ -127,17 +131,50 @@ def recover_interrupted():
 
 
 def due_reminders():
-    """Only changes reminder state; never runs actions in the background."""
+    """Release due work for owner review only; never execute queued actions."""
+    from app.core.resource_governor import resource_governor, SystemState
+    available = resource_governor.state in (SystemState.IDLE, SystemState.INTERACTIVE)
     with SessionLocal() as db:
         now = datetime.now(timezone.utc).isoformat()
         db.query(WorkItem).filter(WorkItem.kind.in_(["task", "calendar_draft"]),
             WorkItem.status == "open", WorkItem.due_at != None, WorkItem.due_at <= now).update(
                 {WorkItem.status: "due"}, synchronize_session=False)
+        db.query(WorkItem).filter(WorkItem.kind == "plan",
+            WorkItem.status.in_(["scheduled", "waiting_resources", "ready"]),
+            WorkItem.due_at != None, WorkItem.due_at <= now).update(
+                {WorkItem.status: "ready" if available else "waiting_resources"}, synchronize_session=False)
         db.commit()
+
+
+def require_plan_available(item):
+    """A schedule grants no approval; recheck time/resources at preparation and execution."""
+    if item.due_at:
+        if item.due_at > datetime.now(timezone.utc).isoformat():
+            raise HTTPException(409, "This plan is scheduled for later.")
+        from app.core.resource_governor import resource_governor, SystemState
+        if resource_governor.state not in (SystemState.IDLE, SystemState.INTERACTIVE):
+            raise HTTPException(409, "This scheduled plan is waiting for available PC resources.")
 
 
 def create_workspace_router(verify_session_token, require_pin):
     router = APIRouter(prefix="/api/workspace", dependencies=[Depends(verify_session_token), Depends(require_owner)])
+
+    @router.post("/documents/search")
+    def document_search(body: DocumentSearchBody):
+        from app.core.document_search import search_documents
+        try:
+            with SessionLocal() as db:
+                return search_documents(db, body.query, limit=20)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.get("/documents/{item_id}")
+    def document(item_id: str):
+        with SessionLocal() as db:
+            row = db.get(WorkItem, item_id)
+            if row is None or row.kind != "document":
+                raise HTTPException(404, "Document not found.")
+            return view(row)
 
     @router.get("/items/{kind}")
     def items(kind: Kind):
@@ -159,7 +196,7 @@ def create_workspace_router(verify_session_token, require_pin):
         payload = {"steps": [step.model_dump() for step in body.steps], "next": 0, "results": []}
         with SessionLocal() as db:
             item = WorkItem(id=str(uuid.uuid4()), kind=kind, title=body.title.strip(), content=body.content,
-                            due_at=body.due_at, status="open", payload=json.dumps(payload))
+                            due_at=body.due_at, status="scheduled" if kind == "plan" and body.due_at else "open", payload=json.dumps(payload))
             db.add(item); db.commit()
             return view(item)
 
@@ -184,6 +221,8 @@ def create_workspace_router(verify_session_token, require_pin):
                         raise HTTPException(400, reason)
                 payload = {"steps": [step.model_dump() for step in body.steps], "next": 0, "results": []}
             item.title = body.title.strip(); item.content = body.content; item.due_at = body.due_at
+            if item.kind == "plan" and item.status in ("open", "ready", "scheduled", "waiting_resources"):
+                item.status = "scheduled" if body.due_at else "open"
             if item.status == "due" and body.due_at and body.due_at > datetime.now(timezone.utc).isoformat():
                 item.status = "open"
             item.payload = json.dumps(payload); db.commit()
@@ -229,10 +268,12 @@ def create_workspace_router(verify_session_token, require_pin):
         from app.core.token_service import token_service
         from app.core.tool_registry import tool_registry
         from app.core.policy_engine import policy_engine, PolicyDecision
+        due_reminders()
         with SessionLocal() as db:
             item = db.get(WorkItem, item_id)
             if not item or item.kind != "plan" or item.status not in ("open", "ready"):
                 raise HTTPException(409, "This plan is not ready to run. Review an interrupted or failed plan first.")
+            require_plan_available(item)
             data = view(item); payload = data["payload"]
             if payload["next"] >= len(payload["steps"]):
                 raise HTTPException(409, "This plan is complete.")
@@ -262,6 +303,7 @@ def create_workspace_router(verify_session_token, require_pin):
                 item = db.get(WorkItem, item_id)
                 if not item or item.kind != "plan" or item.status not in ("open", "ready"):
                     raise HTTPException(409, "This plan is not ready to run.")
+                require_plan_available(item)
                 data = view(item)
                 if data["revision"] != body.revision or not body.token:
                     raise HTTPException(409, "Review the current plan action before approving.")
@@ -386,7 +428,7 @@ def create_workspace_router(verify_session_token, require_pin):
                       "work_items": db.query(WorkItem).filter(WorkItem.kind != "skill_setting").count()}
         return {"counts": counts, "storage": "SQLCipher encrypted database; closed when locked",
                 "audio": "Dictation audio is held in memory only", "network": egress_guard.status(),
-                "integrations": "Email and calendar are local drafts; no external accounts connected"}
+                "integrations": "Email/calendar drafts stay local; optional Google read-only access is managed in Settings"}
 
     @router.post("/emergency-stop")
     def emergency():
@@ -406,4 +448,6 @@ def create_workspace_router(verify_session_token, require_pin):
         vault.lock("emergency-stop")
         return {"stopped": True}
 
+    from app.google_routes import create_google_router
+    router.include_router(create_google_router(require_pin))
     return router

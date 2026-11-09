@@ -2,9 +2,33 @@ import asyncio
 import psutil
 from enum import Enum
 import time
+import ctypes
+import sys
 
 from app.core.gpu_monitor import effective_vram_percent, gpu_monitor
 from app.core.llama_sidecar import llama_sidecar
+
+
+def desktop_busy():
+    """Windows full-screen/presentation signal; None means unavailable.
+
+    SHQueryUserNotificationState reports shell state without reading window
+    titles, inspecting applications or capturing the screen.
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        query = ctypes.WinDLL("shell32.dll", winmode=0x800).SHQueryUserNotificationState
+        query.argtypes = [ctypes.POINTER(ctypes.c_int)]
+        query.restype = ctypes.c_long
+        state = ctypes.c_int()
+        if query(ctypes.byref(state)) != 0:
+            return None
+        if state.value not in range(1, 8):
+            return None
+        return state.value in (2, 3, 4)
+    except (OSError, AttributeError):
+        return None
 
 class SystemState(Enum):
     IDLE = "idle"
@@ -23,6 +47,10 @@ class ResourceGovernor:
         self._task = None
         self.high_load_count = 0
         self.emergency_count = 0
+        self.battery = None
+        self.gpu_temp_c = None
+        self.pause_reason = None
+        self.desktop_busy = None
         
         # Thresholds
         self.cpu_high_threshold = 85.0
@@ -76,7 +104,15 @@ class ResourceGovernor:
         owner's programs run short of VRAM, not merely because the model itself is large."""
         cpu = psutil.cpu_percent(interval=None)
         ram = psutil.virtual_memory().percent
-        vram = effective_vram_percent(gpu_monitor.snapshot(), llama_sidecar.own_vram_mb())
+        gpu = gpu_monitor.snapshot()
+        self.desktop_busy = desktop_busy()
+        self.gpu_temp_c = gpu.get("temp_c") if gpu.get("available") else None
+        try:
+            battery = psutil.sensors_battery()
+            self.battery = {"percent": battery.percent, "plugged_in": bool(battery.power_plugged)} if battery else None
+        except (OSError, NotImplementedError, AttributeError):
+            self.battery = None
+        vram = effective_vram_percent(gpu, llama_sidecar.own_vram_mb())
         return cpu, ram, vram
 
     def _check_resources(self):
@@ -84,6 +120,18 @@ class ResourceGovernor:
         self._evaluate(*self._read_metrics())
 
     def _evaluate(self, cpu, ram, vram):
+        if self.manual_override:
+            return
+        # Only act on real sensor data. Absent battery/temperature readings stay unknown.
+        hot = self.gpu_temp_c is not None and self.gpu_temp_c >= 85
+        low_battery = self.battery is not None and not self.battery["plugged_in"] and self.battery["percent"] <= 15
+        self.pause_reason = "GPU temperature is high" if hot else "Battery is low" if low_battery else None
+        if not self.pause_reason and self.desktop_busy:
+            self.pause_reason = "Full-screen application or presentation is active"
+        if hot:
+            vram = max(vram, 95.0)
+        elif low_battery or self.desktop_busy:
+            cpu = max(cpu, self.cpu_high_threshold)
         # Check emergency thresholds
         if cpu >= self.cpu_emerg_threshold or ram >= self.ram_emerg_threshold or vram >= 95.0:
             self.emergency_count += 1
@@ -134,6 +182,7 @@ class ResourceGovernor:
             self._transition_to(SystemState.INTERACTIVE)
             self.emergency_count = 0
             self.high_load_count = 0
+            self.pause_reason = None
 
     def get_status(self):
         vm = psutil.virtual_memory()
@@ -146,6 +195,9 @@ class ResourceGovernor:
             "manual_override": self.manual_override,
             "gpu": gpu_monitor.peek(),
             "sentinel_vram_mb": llama_sidecar.own_vram_mb(),
+            "battery": self.battery,
+            "pause_reason": self.pause_reason,
+            "desktop_busy": self.desktop_busy,
         }
 
 resource_governor = ResourceGovernor.get_instance()

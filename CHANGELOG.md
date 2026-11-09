@@ -7,6 +7,17 @@ Newest first. Each entry says what changed, why it matters and how to check it.
 
 ---
 
+## 2026-10-17 · Phase 10 packs, encrypted document search, Google read-only & coding analysis
+**Branch:** `phase1/security`
+
+- **Code Analysis Tools (Phase 10):** Added 4 structural inspection tools to `code_assistant`: `skill_code_outline` (skeletons with line numbers for Python & JS/TS), `skill_code_stats` (files, lines, functions, classes), `skill_find_imports` (dependency listings), and `skill_find_references` (word-boundary symbol search). All run strictly inside Sentinel Workspace under Tier 2.
+- **Encrypted Document Retrieval (T-11):** Keyword search over Workspace documents using SQLCipher FTS5 full-text indexing with instant transactional updates on edit/delete. Untrusted excerpt containment and owner authentication enforced.
+- **Google Workspace Read-Only Connector (T-10):** Read-only integration for Gmail and Google Calendar via OAuth2 and PKCE. Egress-guarded, local draft creation only; sending or deleting emails and modifying remote calendar events is blocked.
+- **Professional Skill Packs (T-08 / T-09):** Added research & writing briefs with placeholder/reference checkers, deterministic business/marketing calculators, and technical dimension conversions.
+- **Verification:** All 619 backend tests + 28 new code analysis tests pass; frontend TypeScript and Vite builds pass with 0 errors.
+
+---
+
 ## 2026-10-10 · Portfolio Advisor (advice only)
 **Branch:** `phase1/security` · commit 5892edc
 

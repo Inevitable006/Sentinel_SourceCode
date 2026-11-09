@@ -6,7 +6,13 @@ Live status of the work. Claude updates it as each step finishes.
 - Plan and decisions: `docs/ROADMAP.md`
 - What changed, in plain words: `CHANGELOG.md`
 
-_Last updated: 2026-10-10. Verification checkpoint: `docs/tasks/T-02-verification.md`._
+_Last updated: 2026-10-17. Latest checkpoint: `docs/tasks/T-09-roadmap-completion.md`, `T-10-google-workspace.md`, and `T-11-document-retrieval.md` (619 backend tests + 28 code analysis tests pass). Historical rows below are not the current feature inventory; see CAPABILITIES and the completion ledger._
+
+## Current development checkpoint
+
+Phase 10 packs now include research/writing, business/marketing calculators, technical conversions/estimates, encrypted document retrieval (T-11), and expanded code analysis tools (outline, stats, imports, references). Scheduled plans, battery/GPU-heat controls and Google read-only connection code are implemented. Real GPU chat passed. Full roadmap is **not complete**: advanced identity, learned semantic retrieval, full skill process isolation, and live account/clean-machine validation remain open (T-09/T-10).
+
+Resumed from `9a0668b` on `phase1/security` (Phase 10 coding pack). Coding test runs now reject empty and entirely skipped suites instead of reporting success. Verification results are recorded in T-04. The older phase table below is historical; use `docs/CAPABILITIES.md` for implemented features, including dictation, vision, workspace actions and backups. Clean-machine installation and owner hardware checks remain unverified.
 
 ## Needs you (owner)
 | # | What | Why | Status |

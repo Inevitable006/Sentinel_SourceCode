@@ -23,6 +23,7 @@ Sentinel_SourceCode/
 │  ├─ app/main.py ★               HTTP + chat WebSocket, auth, approvals
 │  ├─ app/workspace_routes.py     tasks, plans, drafts, memory, history, skills, emergency stop
 │  ├─ app/speech_routes.py, vision_routes.py   dictation and image attachment
+│  ├─ app/google_routes.py, core/google_workspace.py   owner-initiated Google OAuth and read-only previews
 │  ├─ app/db/                     SQLCipher database + models
 │  ├─ app/core/
 │  │  ├─ vault.py, dpapi.py ★     PIN, recovery key, encryption keys
@@ -34,7 +35,7 @@ Sentinel_SourceCode/
 │  │  ├─ ai_service.py, prompting.py, llama_sidecar.py, model_registry.py   local model
 │  │  ├─ memory_service.py, research_service.py, retention.py, secrets_store.py
 │  │  └─ resource_governor.py, gpu_monitor.py, speech_input.py, voice_service.py, vision_*.py
-│  ├─ skills/<name>/__init__.py   7 built-in skills (hashes in skill-hashes.json)
+│  ├─ skills/<name>/__init__.py   14 registered skills (code read/test share a module; hashes in skill-hashes.json)
 │  ├─ scripts/                    model download helpers
 │  ├─ tests/                      core / integration / security / skills (pytest)
 │  └─ requirements*.txt, speech-model.json, llama-bin.sha256.json, skill-hashes.json

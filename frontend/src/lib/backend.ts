@@ -81,6 +81,8 @@ export type GovernorStatus = {
   state: string; cpu_percent: number; ram_percent: number;
   ram_used_gb?: number; ram_total_gb?: number; manual_override: boolean; gpu?: GpuSnapshot;
   sentinel_vram_mb?: number;   // VRAM held by Sentinel's own GPU model (0 when none)
+  battery?: { percent: number; plugged_in: boolean } | null;
+  pause_reason?: string | null;
 };
 export type ModelProfile = {
   id: string; name: string; description?: string; tier?: string; filename?: string;

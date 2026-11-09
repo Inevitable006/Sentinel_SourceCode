@@ -2,14 +2,17 @@
   "algorithm": "sha256",
   "modules": {
     "skills.app_control": "12503b982db7bf73d7bad10ee755410ee07ee2c9c8b7d1f538ed01272dc83bb2",
-    "skills.code_assistant": "7dd9f1debdd3c599b83999c4dfd0a4257c18ce83bb44ccaaa1c940b88189a470",
+    "skills.business_analysis": "77f3a99ffb25c63e6e301510d753778ea3ad5a5bf8343f5b2bfc4e81b738876f",
+    "skills.code_assistant": "f644a33f55b19ecd5f8601b3e89b22c71214cc48434ae46c208f13fdbb91b866",
     "skills.core_diagnostics": "2cc2a97277abadcbac0f185d0d5b5b7aec72c9aae4551ae3b9221dd581f82b5b",
-    "skills.document_analysis": "03c438337c1f4b77c111146c38acb858eac17094cef25dc191456a45b4778e56",
+    "skills.document_analysis": "85e6edd7f643acd22eeb8838aea670810f9453b7bd5d15dc1986ec9636c9ea01",
     "skills.file_manager": "77b3885a7a11f80f18b58494d1aa2a5740ede8b529ed3258538e3326ea2513ad",
     "skills.finance_analysis": "7729568511559356c43601da087b62f5241a62e0e1a8e8eb031cc617abfdf812",
     "skills.portfolio_advisor": "b3e39111270f87398793a8c5e9d5883e75fbf02582a93fcc87960a3732fa53e7",
     "skills.python_coding": "51311a31a64b96339fc9a5c831442a757f4ede89afd14bd89c1bc9fa5b719c50",
+    "skills.research_writing": "826f41bba4bc46f1059631000199b4ab3aeaa4f801bfe1337149ac7946d9b107",
     "skills.system_ops": "4bea83aceca510b0d29722be75482c883d65cc27df1fa6014360044a644b8fb0",
+    "skills.technical_analysis": "7bebca26b25bcfac2afa753c9f273f9ddfffb7b9ddcedc90df3145347e3332b3",
     "skills.web_research": "b3b6e8cb0b75943cda199b585a9213f35de945e0ba7e214682cf3965498fdad0"
   }
 }

@@ -49,6 +49,17 @@ def test_reading_outside_the_workspace_is_refused(project):
     assert result["status"] == "error" and "Only files inside" in result["message"]
 
 
+@pytest.mark.parametrize("content", ["x" * 100_000, ("x" * 200 + "\n") * 200],
+                         ids=["long-line", "many-lines"])
+def test_code_read_output_is_bounded(project, content):
+    (project / "calc" / "large.js").write_text(content)
+    result = approve("skill_read_code", {"path": "calc/large.js"})
+    assert result["status"] == "success"
+    assert len(result["data"]) < 8_200
+    assert result["data"].startswith("    1  ")
+    assert "output limit reached at line" in result["data"]
+
+
 @pytest.mark.skipif(os.name != "nt", reason="contained runner is Windows-only")
 def test_tests_run_for_real_and_failures_are_reported(project):
     ok = approve("skill_run_python_tests", {"path": "calc"})
@@ -66,6 +77,29 @@ def test_test_code_cannot_escape_the_project_folder(project, tmp_path_factory):
         f"    def test_x(self):\n        open(r'{outside}', 'w').write('x')\n")
     result = approve("skill_run_python_tests", {"path": "calc"})
     assert result["status"] == "error" and not outside.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="contained runner is Windows-only")
+def test_no_matching_tests_is_not_success(project):
+    result = approve("skill_run_python_tests", {"path": "calc", "pattern": "missing_*.py"})
+    assert result["status"] == "error"
+    assert "RESULT: ran=0" in result["message"]
+    assert "no tests executed" in result["message"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="contained runner is Windows-only")
+def test_all_skipped_tests_is_not_success(project):
+    (project / "calc" / "test_skipped.py").write_text(
+        "import unittest\n@unittest.skip('not configured')\n"
+        "class T(unittest.TestCase):\n"
+        "    def test_skipped(self):\n        pass\n")
+    result = approve("skill_run_python_tests", {"path": "calc", "pattern": "test_skipped.py"})
+    assert result["status"] == "error"
+    assert "RESULT: ran=1 failures=0 errors=0 skipped=1" in result["message"]
+    assert "no tests executed" in result["message"]
+    mixed = approve("skill_run_python_tests", {"path": "calc"})
+    assert mixed["status"] == "success"
+    assert "RESULT: ran=3 failures=0 errors=0 skipped=1" in mixed["data"]
 
 
 def test_running_tests_needs_tier_3():

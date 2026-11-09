@@ -58,6 +58,55 @@ def test_invalid_input_fails(web):
     assert web.post("/api/workspace/items/plan", headers=H, json={"title": "empty plan"}).status_code == 400
 
 
+def test_scheduled_plan_waits_for_time_resources_and_approval(web, monkeypatch):
+    from app import workspace_routes as ws
+    from app.core.resource_governor import resource_governor, SystemState
+    from app.core.secure_runner import secure_runner
+    monkeypatch.setattr(resource_governor, "state", SystemState.IDLE)
+    steps = [{"tool": "run_system_op", "args": {"operation": "echo_text", "target": "scheduled"}}]
+    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    plan = web.post("/api/workspace/items/plan", headers=H,
+                    json={"title": "Scheduled", "steps": steps, "due_at": future}).json()
+    assert plan["status"] == "scheduled"
+    assert web.post(f"/api/workspace/plans/{plan['id']}/prepare", headers=H).status_code == 409
+    past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    assert web.post(f"/api/workspace/items/{plan['id']}/update", headers=H,
+                    json={"title": "Scheduled", "steps": steps, "due_at": past}).status_code == 200
+    monkeypatch.setattr(resource_governor, "state", SystemState.HIGH_LOAD)
+    with monkeypatch.context() as m:
+        m.setattr(secure_runner, "execute", lambda *a, **k: pytest.fail("Scheduler must not execute tools"))
+        ws.due_reminders()
+        listed = web.get("/api/workspace/items/plan", headers=H).json()
+        assert next(p for p in listed if p["id"] == plan["id"])["status"] == "waiting_resources"
+        monkeypatch.setattr(resource_governor, "state", SystemState.IDLE)
+        ws.due_reminders()
+        listed = web.get("/api/workspace/items/plan", headers=H).json()
+        ready = next(p for p in listed if p["id"] == plan["id"])
+        assert ready["status"] == "ready" and ready["payload"]["results"] == []
+    prep = web.post(f"/api/workspace/plans/{plan['id']}/prepare", headers=H).json()
+    monkeypatch.setattr(resource_governor, "state", SystemState.HIGH_LOAD)
+    assert web.post(f"/api/workspace/plans/{plan['id']}/run", headers=H,
+                    json={"token": prep["token"], "revision": prep["revision"]}).status_code == 409
+    monkeypatch.setattr(resource_governor, "state", SystemState.IDLE)
+    result = web.post(f"/api/workspace/plans/{plan['id']}/run", headers=H,
+                     json={"token": prep["token"], "revision": prep["revision"]})
+    assert result.status_code == 200 and result.json()["status"] == "done"
+
+
+def test_cancelled_schedule_is_not_released(web, monkeypatch):
+    from app import workspace_routes as ws
+    from app.core.resource_governor import resource_governor, SystemState
+    monkeypatch.setattr(resource_governor, "state", SystemState.IDLE)
+    plan = web.post("/api/workspace/items/plan", headers=H, json={
+        "title": "Cancelled", "due_at": (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(),
+        "steps": [{"tool": "run_system_op", "args": {"operation": "echo_text", "target": "cancelled"}}],
+    }).json()
+    web.post(f"/api/workspace/items/{plan['id']}/state", headers=H, json={"status": "cancelled"})
+    ws.due_reminders()
+    rows = web.get("/api/workspace/items/plan", headers=H).json()
+    assert next(p for p in rows if p["id"] == plan["id"])["status"] == "cancelled"
+
+
 def _plan(web, steps):
     return web.post("/api/workspace/items/plan", headers=H, json={"title": "p", "steps": steps}).json()
 

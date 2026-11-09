@@ -175,11 +175,12 @@ _FTS_SETUP = _SCHEMA_SETUP   # old name, kept for compatibility
 def init_db():
     """Create all tables plus the memory FTS index, triggers and metadata table. Idempotent."""
     from app.db import models  # noqa: F401  (registers the tables on Base.metadata)
+    from app.core.document_search import SCHEMA as document_schema
 
     eng = get_engine()
     Base.metadata.create_all(bind=eng)
     with eng.begin() as conn:
-        for stmt in _SCHEMA_SETUP:
+        for stmt in [*_SCHEMA_SETUP, *document_schema]:
             conn.execute(text(stmt))
 
 

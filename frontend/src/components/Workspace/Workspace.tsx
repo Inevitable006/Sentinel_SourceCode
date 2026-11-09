@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost } from '../../lib/backend';
 import { usePinAction } from './usePinAction';
 import FileActions from './FileActions';
+import DocumentSearch from './DocumentSearch';
 import './Workspace.css';
 
 type Kind = 'task' | 'plan' | 'email_draft' | 'calendar_draft' | 'document';
@@ -62,12 +63,12 @@ const Editor: React.FC<{ kind: Kind; item?: Item; tools: Tool[]; onSaved: () => 
       {kind !== 'plan' && (
         <label>{kind === 'task' ? 'Notes' : 'Content'} <textarea rows={6} value={content} onChange={e => setContent(e.target.value)} /></label>
       )}
-      {(kind === 'task' || kind === 'calendar_draft') && (
-        <label>{kind === 'task' ? 'Remind me at' : 'When'} <input type="datetime-local" value={due} onChange={e => setDue(e.target.value)} /></label>
+      {(kind === 'task' || kind === 'calendar_draft' || kind === 'plan') && (
+        <label>{kind === 'task' ? 'Remind me at' : kind === 'plan' ? 'Ready for review at (optional)' : 'When'} <input type="datetime-local" value={due} onChange={e => setDue(e.target.value)} /></label>
       )}
       {kind === 'plan' && (
         <div className="ws-steps">
-          <p className="ws-muted">Each action runs only when you approve it, one at a time.</p>
+          <p className="ws-muted">Each action runs only when you approve it, one at a time. Scheduled plans wait until their time and until the PC has resources available.</p>
           {steps.map((s, i) => (
             <div key={i} className="ws-step">
               <select value={s.tool} onChange={e => setSteps(steps.map((x, j) => j === i ? { ...x, tool: e.target.value } : x))}>
@@ -111,6 +112,8 @@ const PlanRunner: React.FC<{ item: Item; onDone: () => void; setMessage: (m: str
 
   return (
     <div className="ws-plan">
+      {item.status === 'scheduled' && <p className="ws-muted">Scheduled for {item.due_at ? new Date(item.due_at).toLocaleString() : 'later'}. You will still approve each action.</p>}
+      {item.status === 'waiting_resources' && <p className="ws-muted">Waiting for the PC to be available. No actions have been started by the scheduler.</p>}
       <ol>
         {steps.map((s, i) => {
           const r = item.payload.results?.[i];
@@ -154,6 +157,11 @@ const Workspace: React.FC = () => {
   }, [kind]);
 
   useEffect(() => { load(); setEditing(null); setOpen(null); }, [load]);
+  useEffect(() => {
+    if (editing || showFiles) return;
+    const timer = window.setInterval(load, 15000);
+    return () => window.clearInterval(timer);
+  }, [load, editing, showFiles]);
   useEffect(() => { apiGet<Tool[]>('/api/workspace/tools').then(setTools).catch(() => setTools([])); }, []);
 
   const setState = async (item: Item, status: 'open' | 'done' | 'cancelled') => {
@@ -183,6 +191,8 @@ const Workspace: React.FC = () => {
       ) : (
         <>
           <button type="button" onClick={() => setEditing('new')}>New {LABELS[kind].replace(/s$/, '').toLowerCase()}</button>
+          <button type="button" onClick={load}>Refresh</button>
+          {kind === 'document' && <DocumentSearch />}
           {items.length === 0 && <p className="ws-muted">Nothing here yet.</p>}
           <ul className="ws-list">
             {items.map(item => (
